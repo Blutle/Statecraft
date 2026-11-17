@@ -49,7 +49,7 @@ Every console has a **control panel** that always sits at the **bottom** of the 
 | Panel control | What it does |
 |---|---|
 | **Name my state / Rename my state** (before the game) | Opens a box for your state name and 3-letter abbreviation. When renaming, it starts filled in with your current values. |
-| **Choose an action…** menu (living states) | **Move** opens a 3×3 arrow grid, with blocked and off-board squares greyed out. **Attack** and **Gift** list only the states within your Influence (gift then asks for an amount). **Upgrade Influence** and **Spy** go straight to confirmation. Every choice ends in **Yes / Cancel**. |
+| **Choose an action…** menu (living states) | **Move** opens a 3×3 arrow grid, with blocked and off-board squares greyed out. **Attack** and **Gift** list only the states within your Influence. **Upgrade Influence** and **Spy** go straight to confirmation. Every choice ends in **Yes / Cancel**. |
 | **Choose an action…** menu (jurors) | **Vote** lists the surviving states. |
 | **Status** / **Board** | Your full status, or the board with your Influence marked, shown privately. |
 | **Public chat** / **Anonymous** | Opens a text box and posts to #public-chat (under your state name) or #anonymous-chat (no name). |
@@ -79,7 +79,7 @@ Each action is allowed only **2:00–8:00 PM Central** and starts your **15-minu
 | `/move direction:<n, ne, e, se, s, sw, w, nw>` | 1 AP | Moves one square. You can't move off the board or onto an occupied square, and destroyed states still block. | #action-log, pings `@Statecraft-Updates` |
 | `/attack state:<state>` | 1 AP | Deals 1 damage to a state within your Influence. At 0 HP the state is destroyed, its owner is revealed, and they join the Jury. | #action-log, pings `@Statecraft-Players` |
 | `/upgrade` | 2 AP | Influence +1. Influence is the number of horizontal plus vertical steps, with a diagonal step counting as 2. | #action-log, pings `@Statecraft-Updates` |
-| `/gift state:<state> amount:<n>` | n AP | Gives AP to a state within your Influence. The recipient gets a private notice in their console. | **No.** Only the recipient, and anyone Spying, finds out. |
+| `/gift state:<state>` | 1 AP | Gives exactly **1 AP** to a State within your Influence (the `gift_amount` setting). To send more, Gift again after your cooldown. The recipient sees it in Recent activity. | **No.** Only the recipient, and anyone Spying, finds out. |
 | `/spy` | 1 AP | **Spy**: shows the top-secret log of every Gift made today in your console, and forwards new Gifts until 8:15 PM. | Spying is posted in #action-log (pings Updates); the Gift details stay private. |
 
 ## Info (console only, free, any time, no cooldown)
