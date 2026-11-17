@@ -22,6 +22,11 @@ Every command is a slash command. Replies are **private** (only the person who r
 - **Your console:** everything a player does. Console commands used anywhere else are rejected, because a slash command in a public channel would show who used it.
 - **Anywhere:** admin commands (`ADMIN_IDS` in `.env` only).
 
+**Confirmation:** every command that **spends AP** (`/move`, `/attack`, `/upgrade`, `/gift`, `/buyinfo`) or **can't be undone** (`/leave`, `/admin reset`, `/admin declare`) first shows a preview with **Yes** and **Cancel** buttons:
+- Only the person who ran it can answer, and unanswered prompts expire after 2 minutes with nothing spent.
+- An action that would fail anyway (out of range, on cooldown, not enough AP, window closed) is rejected immediately, with no prompt. The rejected attempt is still logged.
+- The action runs at the moment **Yes** is clicked. The window, cooldown, and range are checked again then.
+
 **Targets:** commands that take a state autocomplete from state names as you type. You can type the name, the start of it, or its board marker (e.g. `VE`).
 
 ---
@@ -34,7 +39,7 @@ Your state name is only ever typed in your **private console**, never in #regist
 |---|---|---|
 | `/join` | #register | Creates your private console (a random name like `#console-7f3a`, visible only to you, the bot, and the admin) and gives you `@Statecraft-Players`. The reply is private. |
 | `/name name:<state name>` | your console | Sets your state's name, or renames it. You can rename any time before the game starts. Names must be unique, up to 40 characters, and can't contain @, #, <, >, backticks, asterisks, underscores, tildes, pipes, or backslashes. |
-| `/leave` | anywhere | Withdraws before the game starts, removes your role, and deletes your console. |
+| `/leave` | anywhere | (Yes/Cancel) Withdraws before the game starts, removes your role, and deletes your console. |
 
 `/admin start` refuses to start while anyone has joined but not named a state.
 
@@ -123,10 +128,10 @@ Jury discussion happens in #jury. It's normal chat, not a command.
 | `/admin start` | Closes registration, places the states (needs 12+ players), posts the board, and announces the state names without owners. The first AP arrives at the next 2:00 PM. |
 | `/admin status` | Full view: phase, day, and every state with its owner, AP, HP, position, and cooldown. Also shows tonight's ballots and anyone with info access. |
 | `/admin give state:<state> amount:<n>` | Adds or removes AP (negative amount). Logged. |
-| `/admin declare states:<states> confirm:<true>` | Ends the game with one or more joint winners, for a draw agreed outside the game. Reveals the winners. |
+| `/admin declare states:<states>` | (Yes/Cancel) Ends the game with one or more joint winners, for a draw agreed outside the game. Reveals the winners. |
 | `/admin juryscore` | After the game: ranks jurors by votes for the winner(s), with ballots, nights, and rate. |
 | `/admin reload` | Reloads `game.json` after you edit it by hand. |
-| `/admin reset confirm:<true>` | Wipes the game for a fresh one. The old history log is kept under a timestamped name. |
+| `/admin reset` | (Yes/Cancel) Wipes the game for a fresh one. The old history log is kept under a timestamped name. |
 | `/admin cleanup confirm:<true>` | After a game: archives or deletes the console channels and removes game roles. |
 
 ## Test mode (`TEST_MODE=1` in `.env` only, admins only)
