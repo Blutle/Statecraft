@@ -103,6 +103,24 @@ class LifecycleTests(unittest.TestCase):
         self.assertFalse(g.register("b", "westhaven").ok)
         self.assertFalse(g.register("A", "Other").ok)
 
+    def test_discord_id_registration_and_rename(self):
+        g = Game()
+        self.assertTrue(g.register("Greg", "Westhaven", pid="111").ok)
+        self.assertTrue(g.register("Sam", "Kesh", pid="222").ok)
+        self.assertFalse(g.register("Greg", "kesh", pid="111").ok)       # taken by someone else
+        res = g.register("Greg", "Iron Dominion", pid="111")             # /join again renames
+        self.assertTrue(res.ok)
+        self.assertEqual(g.get("111").state_name, "Iron Dominion")
+        self.assertEqual(g.get("111").marker, "ID")
+        self.assertEqual(len(g.state.players), 2)
+        self.assertTrue(g.register("Greg", "Iron Dominion", pid="111").ok)  # same name is fine
+
+    def test_state_names_reject_discord_markup(self):
+        g = Game()
+        for bad in ("@everyone", "<@&123>", "`code`", "**Bold**", "#channel"):
+            self.assertFalse(g.register("x", bad, pid="1").ok, bad)
+        self.assertTrue(g.register("x", "King's Reach", pid="1").ok)
+
     def test_markers_unique(self):
         g = Game()
         g.register("a", "Veyran Empire")

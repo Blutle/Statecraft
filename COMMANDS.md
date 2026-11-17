@@ -1,6 +1,19 @@
 # Statecraft Bot Commands
 
-The Discord command reference. **Status: proposed** (nothing here is built in Discord yet). Update this file whenever a command is added, changed, or removed.
+The Discord command reference. Update this file whenever a command is added, changed, or removed.
+
+**Build status (2026-11-17):**
+- **Built:**
+  - Registration: `/join` (including renaming) and `/leave`, plus console creation.
+  - All gameplay actions, `/status` (own and other states), `/board` (text version), `/info`, `/help`, `/notify`, `/say`, `/dm` with the Reply pop-up, `/anon`, `/vote`.
+  - Admin: `setup`, `start`, `status`, `give`, `declare`, `juryscore`, `reload`, `reset`.
+  - Every test-mode command.
+  - The automatic scheduler and the #game-board auto-update.
+- **Not built yet:**
+  - Pacts.
+  - `/admin open` and `/admin cleanup`.
+  - The Pillow board image and the "Show range for…" dropdown.
+  - The red outline marking states that can reach you.
 
 Every command is a slash command. Replies are **private** (only the person who ran the command sees them) unless the table says something is posted publicly. Every command, including rejected attempts, is written to the game history log (see `IMPLEMENTATION_PLAN.md` §4b).
 

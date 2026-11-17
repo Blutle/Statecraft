@@ -26,6 +26,10 @@ MAX_NAME_LEN = 40
 MAX_MESSAGE_LEN = 1500
 
 
+def data_event(kind: str, **data) -> list[Event]:
+    return [Event(kind, data=data)]
+
+
 def recorded(action: str):
     """Decorator: log every call (args, outcome, events, and the after-state of
     the players involved) to the game's history recorder."""
@@ -111,7 +115,10 @@ class Game:
     # ------------------------------------------------------------- lifecycle
 
     @recorded("register")
-    def register(self, owner_name: str, state_name: str) -> Result:
+    def register(self, owner_name: str, state_name: str, pid: str | None = None) -> Result:
+        """Register a player. `pid` is the Discord user id (the CLI omits it
+        and gets p1, p2, ...). Registering again with the same pid before the
+        game starts renames the state."""
         if self.state.phase != "registration":
             return Result.fail("Registration is closed; the game has already started.")
         owner_name = owner_name.strip()
@@ -120,13 +127,27 @@ class Game:
             return Result.fail("Both a player name and a state name are required.")
         if len(state_name) > MAX_NAME_LEN:
             return Result.fail(f"State names are limited to {MAX_NAME_LEN} characters.")
+        if any(c in state_name for c in "@#<>`*_~|\\"):
+            return Result.fail("State names can't contain @ # < > ` * _ ~ | or backslashes.")
+        existing = self.state.players.get(pid) if pid else None
         for p in self.state.players.values():
+            if p is existing:
+                continue
             if p.state_name.lower() == state_name.lower():
                 return Result.fail(f"The name '{state_name}' is already taken.")
-            if p.owner_name.lower() == owner_name.lower():
+            if pid is None and p.owner_name.lower() == owner_name.lower():
                 return Result.fail(f"Player '{owner_name}' already controls {p.state_name}.")
+        if existing:
+            old = existing.state_name
+            existing.state_name = state_name
+            existing.owner_name = owner_name
+            existing.marker = ""
+            existing.marker = self._make_marker(state_name)
+            return Result(True, f"Renamed {old} to {state_name} [{existing.marker}].",
+                          data_event("RENAME", pid=pid))
 
-        pid = f"p{self.state.next_player_num}"
+        if pid is None:
+            pid = f"p{self.state.next_player_num}"
         self.state.next_player_num += 1
         player = Player(
             id=pid,
@@ -324,6 +345,7 @@ class Game:
                 self.state.info_access.remove(t.id)
             events.append(Event(
                 "ELIMINATION",
+                data={"victim": t.id, "attacker": p.id},
                 public=(f"{p.state_name} attacked {t.state_name}, destroying it! "
                         f"{t.state_name} was controlled by {t.owner_name}, who now joins the Jury."),
                 private={t.id: "Your state has been destroyed. You are now on the Jury and can vote each night."},
@@ -597,7 +619,8 @@ class Game:
         text, err = self._message_text(text)
         if err:
             return Result.fail(err)
-        return Result(True, "Posted to #public-chat.", [Event("PUBLIC_CHAT", public=f"{p.state_name}: {text}")])
+        return Result(True, "Posted to #public-chat.", [Event(
+            "PUBLIC_CHAT", public=f"{p.state_name}: {text}", data={"sender": p.id, "state": p.state_name, "text": text})])
 
     @recorded("dm")
     def dm(self, pid: str, tid: str, text: str) -> Result:
@@ -615,7 +638,8 @@ class Game:
         if err:
             return Result.fail(err)
         return Result(True, f"Message delivered to {t.state_name}.", [Event(
-            "PRIVATE_MESSAGE", private={t.id: f"Message from {p.state_name}: {text}"})])
+            "PRIVATE_MESSAGE", private={t.id: f"Message from {p.state_name}: {text}"},
+            data={"sender": p.id, "recipient": t.id, "text": text})])
 
     @recorded("anon")
     def anon(self, pid: str, text: str) -> Result:
@@ -626,7 +650,7 @@ class Game:
         if err:
             return Result.fail(err)
         return Result(True, "Posted anonymously to #anonymous-chat.",
-                      [Event("ANONYMOUS", public=f"Anonymous: {text}")])
+                      [Event("ANONYMOUS", public=f"Anonymous: {text}", data={"text": text})])
 
     # ---------------------------------------------------------------- history
 

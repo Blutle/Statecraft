@@ -89,6 +89,7 @@ class Event:
     public: str | None = None                         # text for public channels
     private: dict[str, str] = field(default_factory=dict)  # player id -> text
     ping: str = "none"                                # mandatory | opt_in | none
+    data: dict = field(default_factory=dict)          # structured details for the interface
 
 
 @dataclass
