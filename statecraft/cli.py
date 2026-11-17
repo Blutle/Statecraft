@@ -44,7 +44,7 @@ ACTIONS (current player)
   vote <state>                  Jury only: vote for a surviving state
 
 MESSAGES (free, logged in full, including anonymous posts' real author; jurors too)
-  say <message>                 Public diplomacy, posted under your state's name
+  say <message>                 Post to #public-chat under your state's name
   dm <state> <message>          Private message to another state (quote multi-word names)
   anon <message>                Anonymous public post
 

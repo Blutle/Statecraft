@@ -587,17 +587,17 @@ class Game:
 
     @recorded("say")
     def say(self, pid: str, text: str) -> Result:
-        """Public diplomacy, posted under the state's name. Eliminated players
+        """Post to #public-chat under the state's name. Eliminated players
         keep full social access (they only gain the jury chat)."""
         p = self.get(pid)
         if not p:
             return Result.fail("You are not a player in this game.")
         if self.state.phase != "active":
-            return Result.fail("Diplomacy is only open while the game is in progress.")
+            return Result.fail("Chat through the bot is only open while the game is in progress.")
         text, err = self._message_text(text)
         if err:
             return Result.fail(err)
-        return Result(True, "Posted to #diplomacy.", [Event("DIPLOMACY", public=f"{p.state_name}: {text}")])
+        return Result(True, "Posted to #public-chat.", [Event("PUBLIC_CHAT", public=f"{p.state_name}: {text}")])
 
     @recorded("dm")
     def dm(self, pid: str, tid: str, text: str) -> Result:
@@ -606,7 +606,7 @@ class Game:
         if not p:
             return Result.fail("You are not a player in this game.")
         if self.state.phase != "active":
-            return Result.fail("Diplomacy is only open while the game is in progress.")
+            return Result.fail("Chat through the bot is only open while the game is in progress.")
         if not t:
             return Result.fail("No such state.")
         if t.id == p.id:

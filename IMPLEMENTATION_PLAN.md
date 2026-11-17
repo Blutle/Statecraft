@@ -232,8 +232,8 @@ statecraft/
 
 **3b. Server setup (`/admin setup`)**
 - [ ] Create the roles `Statecraft-Players`, `Statecraft-Updates`, and `Statecraft-Jury`
-- [ ] Create the channels `#game-board`, `#action-log`, `#diplomacy`, `#anonymous-chat`, and `#jury`, with the right permission overwrites (players can read but not post in the bot-mediated channels)
-- [ ] Create a `#diplomacy` webhook (one webhook, with the username overridden per message)
+- [ ] Create the channels `#game-board`, `#action-log`, `#public-chat`, `#anonymous-chat`, and `#jury`, with the right permission overwrites (players can read but not post in the bot-mediated channels)
+- [ ] Create a `#public-chat` webhook (one webhook, with the username overridden per message)
 - [ ] Save the channel and role IDs to `game.json`
 
 **3c. Registration**
@@ -243,7 +243,7 @@ statecraft/
 **3d. Console commands** (rejected outside the player's own console)
 - [ ] `/move direction`, `/attack state`, `/upgrade`, `/gift state amount`, `/buyinfo`
 - [ ] `/status`: private AP, cooldown remaining, position, range
-- [ ] `/say message` → `#diplomacy` via the webhook, shown as the state name
+- [ ] `/say message` → `#public-chat` via the webhook, shown as the state name (channel renamed from #diplomacy, 2026-11-17)
 - [ ] `/dm state message` → the recipient's console, labeled with the sending state
 - [ ] `/anon message` → `#anonymous-chat`, posted as the bot
 - [ ] `/vote state` (jurors only, off-hours, private confirmation)
@@ -292,7 +292,7 @@ These are the ways a living state's owner could be exposed. Each one needs to be
 | Slash command invoked in a public channel shows "User used /attack" | Gameplay commands are rejected outside consoles; `/join` replies ephemerally |
 | Console channel name reveals the player | Random names; only the owner and admins can see the channel |
 | Bot replies mention the user | Never use `interaction.user.mention` in non-ephemeral output |
-| Diplomacy posted by the user directly | Players lack Send Messages permission in `#diplomacy` and `#anonymous-chat` |
+| Diplomacy posted by the user directly | Players lack Send Messages permission in `#public-chat` and `#anonymous-chat` |
 | Role membership | The Players and Updates roles are shared by everyone, so they reveal nothing per state |
 | Timing correlation (someone acts right when they come online) | Can't be prevented. Note this to players as part of the meta-game. |
 

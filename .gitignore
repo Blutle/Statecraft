@@ -8,6 +8,8 @@ game.json
 game.json.tmp
 game.json.bak
 *.history*.jsonl
+server.json
+server.json.tmp
 board.png
 
 # Secrets (Discord token, later)
