@@ -29,7 +29,8 @@ ROLES = {
 #   jury:     only the Jury role
 #   admin:    hidden (server admins see it via Administrator)
 CHANNELS = {
-    "how_to_play": ("how-to-play", "Rules and commands for Statecraft.", "readonly"),
+    "rules": ("rules", "The rules of Statecraft.", "readonly"),
+    "how_to_play": ("how-to-play", "How to use the bot: your console, the panel, chat, DMs, and pacts.", "readonly"),
     "register": ("register", "Run /join here to enter the next game. Your state name stays private.", "open"),
     "game_board": ("game-board", "The current map and every state's public stats.", "readonly"),
     "action_log": ("action-log", "Every move, attack, upgrade, and elimination.", "readonly"),
@@ -157,6 +158,16 @@ async def ensure_server(guild: discord.Guild, path: Path, echo=None) -> list[str
         if ch is None:
             ch = await category.create_text_channel(name, topic=topic, overwrites=ow, reason="Statecraft setup")
             report.append(f"created #{name}")
+            # keep the category in CHANNELS order (new channels are otherwise added at the bottom)
+            keys = list(CHANNELS)
+            before = [channels[k] for k in keys[:keys.index(key)] if k in channels]
+            try:
+                if before:
+                    await ch.move(after=before[-1], reason="Statecraft setup")
+                else:
+                    await ch.move(beginning=True, reason="Statecraft setup")
+            except discord.HTTPException:
+                pass
         else:
             await ch.edit(topic=topic, overwrites=ow, category=category, reason="Statecraft setup (repair)")
             report.append(f"found #{name} (permissions reset)")

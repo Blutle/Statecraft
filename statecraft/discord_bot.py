@@ -21,7 +21,7 @@ import discord
 from discord import app_commands
 from discord.ext import tasks
 
-from . import config, discord_setup, geometry, schedule
+from . import config, discord_setup, geometry, guides, schedule
 from .discord_format import (HELP, NO_PINGS, action_card, board_message, history_line, own_status, parse_duration, public_status,
                              run_text)
 from .discord_service import GameService
@@ -35,6 +35,7 @@ PUBLIC_KINDS_PLAYERS_PING = {"ATTACK", "ELIMINATION", "GAME_OVER", "GAME_START",
 PUBLIC_KINDS_UPDATES_PING = {"MOVE", "UPGRADE", "INFO_PURCHASE"}
 BOARD_CHANGING = {"GAME_START", "MOVE", "ATTACK", "ELIMINATION", "UPGRADE", "DAILY_AP",
                   "JURY_RESULT", "GAME_OVER", "ADMIN_EDIT", "REVIVED"}
+KEEP_ON_FRESH = {"admin_log", "rules", "how_to_play"}   # fresh_channels never wipes these
 CHAT_KINDS = {"PUBLIC_CHAT", "ANONYMOUS", "PRIVATE_MESSAGE", "PACT_MESSAGE"}   # no panel refresh needed
 DIRECTIONS = [app_commands.Choice(name=n, value=v) for n, v in [
     ("North (up)", "n"), ("North-east", "ne"), ("East (right)", "e"), ("South-east", "se"),
@@ -352,6 +353,37 @@ class Router:
                     await th.edit(name=f"↔ {name}"[:100])
                 except discord.HTTPException:
                     pass
+
+    async def post_guides(self) -> list[str]:
+        """Post (or update in place) the #rules and #how-to-play guides."""
+        report = []
+        s = self.svc.game.s
+        for key, sections in (("rules", guides.rules(s)), ("how_to_play", guides.how_to_play(s))):
+            ch = self.channel(key)
+            if not ch:
+                report.append(f"no #{key.replace('_', '-')} channel (run /admin setup)")
+                continue
+            cards = [discord.Embed(title=title, description=body, colour=0x1ABC9C if key == "rules" else 0x5865F2)
+                     for title, body in sections]
+            stored = self.svc.server.setdefault("guides", {}).get(key, [])
+            if len(stored) == len(cards):
+                try:
+                    for mid, card in zip(stored, cards):
+                        await ch.get_partial_message(mid).edit(embed=card)
+                    report.append(f"updated #{ch.name} ({len(cards)} cards)")
+                    continue
+                except discord.NotFound:
+                    pass
+            for mid in stored:                                   # layout changed: replace the set
+                try:
+                    await ch.get_partial_message(mid).delete()
+                except discord.HTTPException:
+                    pass
+            ids = [(await ch.send(embed=card, allowed_mentions=NO_PINGS)).id for card in cards]
+            self.svc.server["guides"][key] = ids
+            self.svc.save_server()
+            report.append(f"posted #{ch.name} ({len(cards)} cards)")
+        return report
 
     async def refresh_board(self) -> None:
         ch = self.channel("game_board")
@@ -805,12 +837,22 @@ def register_commands(bot: StatecraftBot) -> None:
         if not await admin_only(i):
             return
         await i.response.defer(ephemeral=True, thinking=True)
-        keep = {k: v for k, v in svc.server.items() if k in ("board_message_id", "test_clock_offset", "panels")}
+        keep = {k: v for k, v in svc.server.items() if k not in ("roles", "channels", "category_id",
+                                                               "console_category_id", "public_chat_webhook_id")}
         report = await discord_setup.ensure_server(i.guild, svc.cfg.server_file)
         svc.server = {**discord_setup.load_server(svc.cfg.server_file), **keep}
         svc.save_server()
         bot._webhook = None
+        report += await bot.router.post_guides()
         await i.followup.send("\n".join(report)[:2000], ephemeral=True)
+
+    @admin.command(name="guides", description="Post or update the #rules and #how-to-play guides")
+    async def guides_cmd(i: discord.Interaction):
+        if not await admin_only(i):
+            return
+        await i.response.defer(ephemeral=True, thinking=True)
+        await i.followup.send("\n".join(await bot.router.post_guides()), ephemeral=True)
+
 
     @admin.command(description="Start the game (needs 12+ players)")
     async def start(i: discord.Interaction):
@@ -1005,10 +1047,10 @@ def register_commands(bot: StatecraftBot) -> None:
     async def recreate_public_channels(guild: discord.Guild) -> None:
         """Delete the public game channels and recreate them empty (same names
         and permissions). Their Discord history goes; the history log stays.
-        #statecraft-admin (the referee's channel) is left alone."""
+        #rules, #how-to-play, and #statecraft-admin are left alone."""
         kept = {}
         for key, cid in list(svc.server.get("channels", {}).items()):
-            if key == "admin_log":
+            if key in KEEP_ON_FRESH:
                 kept[key] = cid
                 continue
             ch = guild.get_channel(cid)
@@ -1025,8 +1067,8 @@ def register_commands(bot: StatecraftBot) -> None:
         svc.save_server()
         bot._webhook = None
 
-    FRESH_NOTE = ("Also wipe the public game channels (board, action log, chats, jury, register) by "
-                  "recreating them empty. #statecraft-admin is kept.")
+    FRESH_NOTE = ("Also wipe the game channels (board, action log, chats, jury, register) by recreating them "
+                  "empty. Rules, how-to-play, and the admin channel are kept.")
 
     @admin.command(description="Wipe the game (keeps the old history log)")
     @app_commands.describe(fresh_channels=FRESH_NOTE)
