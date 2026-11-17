@@ -61,11 +61,11 @@ class Router:
         if ch:
             await ch.send(text[:2000], allowed_mentions=NO_PINGS)
 
-    async def deliver(self, events: list[Event]) -> None:
+    async def deliver(self, events: list[Event], echo_dm: bool = True) -> None:
         board_dirty = False
         for ev in events:
             try:
-                await self._deliver_one(ev)
+                await self._deliver_one(ev, echo_dm)
             except discord.HTTPException as e:
                 log.exception("delivery failed")
                 await self.admin_log(f"Delivery failed for {ev.kind}: {e}")
@@ -75,7 +75,10 @@ class Router:
         if any(ev.kind not in CHAT_KINDS for ev in events):
             self.bot.ui.schedule_refresh()
 
-    async def _deliver_one(self, ev: Event) -> None:
+    async def _deliver_one(self, ev: Event, echo_dm: bool = True) -> None:
+        if ev.kind == "PRIVATE_MESSAGE":
+            await self.deliver_dm(ev.data["sender"], ev.data["recipient"], ev.data["text"], echo_dm)
+            return
         if ev.kind == "PUBLIC_CHAT":
             await self.post_as_state(ev.data["state"], ev.data["text"])
         elif ev.kind == "ANONYMOUS":
@@ -96,10 +99,7 @@ class Router:
 
         for pid, text in ev.private.items():
             view = None
-            if ev.kind == "PRIVATE_MESSAGE":
-                view = discord.ui.View(timeout=None)
-                view.add_item(ReplyButton(ev.data["sender"]))
-            elif ev.kind == "PACT_INVITE":
+            if ev.kind == "PACT_INVITE":
                 view = discord.ui.View(timeout=None)
                 view.add_item(PactInviteButton(ev.data["pact"], "y"))
                 view.add_item(PactInviteButton(ev.data["pact"], "n"))
@@ -215,16 +215,93 @@ class Router:
                 await ch.send(f"*{text}*", allowed_mentions=NO_PINGS)
 
     async def to_player(self, pid: str, text: str, view: discord.ui.View | None = None) -> None:
+        """Tell a player something privately.
+
+        Only messages that need an answer (a `view` with buttons, e.g. a pact
+        invitation) are posted in the console, and the panel then moves back
+        below them. Everything else becomes a line in the panel's Recent
+        activity, so consoles don't fill up with notices."""
         if self.svc.is_fake(pid):
             p = self.svc.game.get(pid)
             await self.admin_log(f"[to {p.state_name if p else pid}] {text}")
             return
+        if view is None:
+            self.svc.add_recent(pid, text[:300])
+            self.bot.ui.schedule_refresh()
+            return
         ch = self.bot.get_channel(self.svc.console_of(pid) or 0)
         if ch:
-            kwargs = {"allowed_mentions": NO_PINGS}
-            if view:
-                kwargs["view"] = view
-            await ch.send(text[:2000], **kwargs)
+            await ch.send(text[:2000], view=view, allowed_mentions=NO_PINGS)
+            self.bot.ui.schedule_repost(pid)
+
+    # ---- DMs: a private thread per correspondent inside each console
+
+    async def open_dm_thread(self, owner: str, other: str) -> discord.Thread | None:
+        """The owner's private thread for talking with `other` (created on demand)."""
+        if self.svc.is_fake(owner):
+            return None
+        if tid := self.svc.dm_thread(owner, other):
+            th = self.bot.get_channel(tid)
+            if th is None:
+                try:
+                    th = await self.bot.fetch_channel(tid)
+                except (discord.NotFound, discord.Forbidden):
+                    th = None
+            if th is not None:
+                return th
+            self.svc.set_dm_thread(owner, other, None)
+        console = self.bot.get_channel(self.svc.console_of(owner) or 0)
+        if not console:
+            return None
+        o = self.svc.game.get(other)
+        th = await console.create_thread(name=f"↔ {o.state_name}"[:100], type=discord.ChannelType.private_thread,
+                                         invitable=False, auto_archive_duration=10080,
+                                         reason="Statecraft private conversation")
+        await th.add_user(discord.Object(int(owner)))
+        self.svc.set_dm_thread(owner, other, th.id)
+        # Remove the "started a thread" notice from the console, if Discord posted one
+        try:
+            async for m in console.history(limit=5):
+                if m.type == discord.MessageType.thread_created:
+                    await m.delete()
+        except discord.HTTPException:
+            pass
+        await th.send(f"Private conversation with **{o.state_name}**. Type here: your messages are relayed to them "
+                      "under your state name, and theirs appear here. Nobody sees anyone's Discord account. "
+                      "Everything is logged for the post-game summary.", allowed_mentions=NO_PINGS)
+        return th
+
+    async def console_webhook(self, pid: str) -> discord.Webhook | None:
+        rec = self.svc.console_hook(pid)
+        if rec:
+            return discord.Webhook.partial(rec["id"], rec["token"], client=self.bot)
+        console = self.bot.get_channel(self.svc.console_of(pid) or 0)
+        if not console:
+            return None
+        hook = await console.create_webhook(name="Statecraft Relay", reason="Statecraft DM relay")
+        self.svc.set_console_hook(pid, {"id": hook.id, "token": hook.token})
+        return hook
+
+    async def post_in_dm_thread(self, owner: str, other: str, text: str, username: str) -> None:
+        th = await self.open_dm_thread(owner, other)
+        hook = await self.console_webhook(owner)
+        if not th or not hook:
+            return
+        try:
+            await hook.send(text[:2000], username=username[:80], thread=th, allowed_mentions=NO_PINGS)
+        except discord.HTTPException:
+            await th.edit(archived=False)                   # archived after a quiet week: reopen and retry
+            await hook.send(text[:2000], username=username[:80], thread=th, allowed_mentions=NO_PINGS)
+
+    async def deliver_dm(self, sender: str, recipient: str, text: str, echo: bool) -> None:
+        g = self.svc.game
+        s_name, r_name = g.get(sender).state_name, g.get(recipient).state_name
+        if self.svc.is_fake(recipient):
+            await self.admin_log(f"[DM {s_name} -> {r_name}] {text}")
+        else:
+            await self.post_in_dm_thread(recipient, sender, text, s_name)
+        if echo and not self.svc.is_fake(sender):
+            await self.post_in_dm_thread(sender, recipient, text, f"{s_name} (you)")
 
     async def post_as_state(self, state_name: str, text: str) -> None:
         hook = await self.bot.public_chat_webhook()
@@ -294,6 +371,22 @@ class StatecraftBot(discord.Client):
     async def on_message(self, message: discord.Message):
         """Relay messages typed in a pact channel copy to the other members."""
         if message.author.bot or message.webhook_id:
+            return
+        dm = self.svc.dm_of_thread(message.channel.id)
+        if dm:
+            owner, other = dm
+            if str(message.author.id) != owner:
+                return
+            text = message.content.strip()
+            if message.attachments:
+                text = (text + "\n" + "\n".join(a.url for a in message.attachments)).strip()
+            if not text:
+                return
+            res = await self.svc.run(lambda g, now: g.dm(owner, other, text))
+            if not res.ok:
+                await message.reply(f"Not delivered: {res.message}", allowed_mentions=NO_PINGS)
+                return
+            await self.router.deliver(res.events, echo_dm=False)
             return
         found = self.svc.pact_of_channel(message.channel.id)
         if not found:
@@ -380,7 +473,7 @@ def register_commands(bot: StatecraftBot) -> None:
         svc.set_console(pid, console.id)
         await bot.router.grant_role(pid, "players")
         await console.send("Welcome to Statecraft. This is your **private console**: only you (and the referee) "
-                           "can see it.\n\nEverything you need is on the **control panel** pinned below: start by "
+                           "can see it.\n\nEverything you need is on the **control panel** below (it always stays at the bottom): start by "
                            "tapping **Name my state**. Slash commands work here too (`/help` lists them).",
                            allowed_mentions=NO_PINGS)
         await ui.post_panel(pid)
@@ -393,7 +486,8 @@ def register_commands(bot: StatecraftBot) -> None:
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
             guild.me: discord.PermissionOverwrite(**discord_setup.BOT_PERMS),
             member: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True,
-                                                use_application_commands=True, add_reactions=True),
+                                                use_application_commands=True, add_reactions=True,
+                                                send_messages_in_threads=True),
         }
         return await guild.create_text_channel(f"console-{secrets.token_hex(2)}", category=cat,
                                                overwrites=overwrites, reason="Statecraft console")
@@ -430,7 +524,8 @@ def register_commands(bot: StatecraftBot) -> None:
             # Respond before deleting: the command may have been run in the console itself.
             await ci.response.edit_message(content="You've left the game. Your console is being deleted.", view=None)
             svc.set_console(pid, None)
-            svc.server.get("panels", {}).pop(pid, None)
+            for key in ("panels", "dm_threads", "console_hooks", "recent"):
+                svc.server.get(key, {}).pop(pid, None)
             svc.save_server()
             ch = bot.get_channel(cid) if cid else None
             if ch:
@@ -508,11 +603,11 @@ def register_commands(bot: StatecraftBot) -> None:
         if not (pid := await ui.console_pid(i)):
             return
         if state is None or ui.resolve(state)[0] == pid:
-            await i.response.send_message(own_status(svc.game, pid, svc.now()))
+            await i.response.send_message(own_status(svc.game, pid, svc.now()), ephemeral=True)
             return
         tid, err = ui.resolve(state)
         await i.response.send_message(public_status(svc.game, pid, tid) if tid else f"Rejected: {err}",
-                                      allowed_mentions=NO_PINGS)
+                                      allowed_mentions=NO_PINGS, ephemeral=True)
 
     @tree.command(description="Show the board here, with a state's range highlighted")
     @app_commands.autocomplete(state=any_states)
@@ -520,18 +615,19 @@ def register_commands(bot: StatecraftBot) -> None:
         if not (pid := await ui.console_pid(i)):
             return
         if svc.game.state.board_size == 0:
-            await i.response.send_message("The board appears when the game starts.")
+            await i.response.send_message("The board appears when the game starts.", ephemeral=True)
             return
         focus = ui.resolve(state)[0] if state else pid
-        await i.response.send_message(embed=board_embed(svc.game, focus or pid))
+        await i.response.send_message(embed=board_embed(svc.game, focus or pid), ephemeral=True)
 
     @tree.command(description="Re-show today's AP gifts (needs /buyinfo)")
     async def info(i: discord.Interaction):
         if pid := await ui.console_pid(i):
             if pid in svc.game.state.info_access:
-                await i.response.send_message(f"```\n{svc.game.gift_report()}\n```")
+                await i.response.send_message(f"```\n{svc.game.gift_report()}\n```", ephemeral=True)
             else:
-                await i.response.send_message("You don't have information access today. Use `/buyinfo` (1 AP).")
+                await i.response.send_message("You don't have information access today. Use `/buyinfo` (1 AP).",
+                                              ephemeral=True)
 
     @tree.command(name="help", description="Commands and rules summary")
     async def help_cmd(i: discord.Interaction):
@@ -549,7 +645,7 @@ def register_commands(bot: StatecraftBot) -> None:
                 await i.user.add_roles(discord.Object(rid))
             else:
                 await i.user.remove_roles(discord.Object(rid))
-        await i.response.send_message(f"Minor-event pings are now **{setting.value}**.")
+        await i.response.send_message(f"Minor-event pings are now **{setting.value}**.", ephemeral=True)
 
     # ---- communication
     @tree.command(description="Post in #public-chat under your state's name")
@@ -625,7 +721,7 @@ def register_commands(bot: StatecraftBot) -> None:
     @pact.command(name="list", description="Your pacts, their members, and pending invitations")
     async def pact_list(i: discord.Interaction):
         if pid := await ui.console_pid(i):
-            await i.response.send_message(pact_summary(svc.game, pid), allowed_mentions=NO_PINGS)
+            await i.response.send_message(pact_summary(svc.game, pid), allowed_mentions=NO_PINGS, ephemeral=True)
 
     tree.add_command(pact)
 
@@ -647,7 +743,8 @@ def register_commands(bot: StatecraftBot) -> None:
             if cat:
                 await cat.delete(reason="Statecraft cleanup")
         svc.server["pact_categories"] = []
-        svc.server["panels"] = {}
+        for key in ("panels", "dm_threads", "console_hooks", "recent"):
+            svc.server[key] = {}
         # Remove game roles from each known player (no member-list intent needed)
         role_ids = [svc.role_id(k) for k in ("players", "updates", "jury") if svc.role_id(k)]
         for pid in people:

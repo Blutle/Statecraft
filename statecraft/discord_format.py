@@ -14,7 +14,7 @@ from .models import Result
 
 NO_PINGS = discord.AllowedMentions.none()
 
-HELP = """**Statecraft**: use the **control panel** pinned at the top of your console. Every slash command below also works as a backup.
+HELP = """**Statecraft**: use the **control panel** at the bottom of your console. Conversations with other states open as private threads (✉️ Message a state). Every slash command below also works as a backup.
 **Before the game**: `/name` sets or changes your state's name · `/leave` withdraws
 **Actions** (2:00-8:00 PM Central, 15-minute cooldown after each, always confirmed first):
 Move 1 AP · Attack 1 AP · Upgrade 2 AP (range +1) · Gift (give AP to a state in range) · Buy info 1 AP (today's gifts until 8:15 PM)
@@ -70,8 +70,25 @@ def board_embed(game: Game, viewer_pid: str | None = None) -> discord.Embed:
                          description=f"```\n{text[:3900]}\n```", colour=discord.Colour.dark_teal())
 
 
-def panel_embed(game: Game, pid: str, now: datetime) -> discord.Embed:
-    """The status card at the top of a player's control panel."""
+def panel_embed(game: Game, pid: str, now: datetime, recent: list[dict] | None = None) -> discord.Embed:
+    """The status card on a player's control panel, plus their recent activity."""
+    emb = _panel_card(game, pid, now)
+    if recent:
+        s = game.s
+        lines = []
+        for item in reversed(recent):                       # newest first
+            when = schedule.fmt(datetime.fromisoformat(item["time"]), s)
+            lines.append(f"`{when}` {item['text']}")
+        text = ""
+        for line in lines:                                  # embed fields are capped at 1024 characters
+            if len(text) + len(line) + 1 > 1024:
+                break
+            text += line + "\n"
+        emb.add_field(name="Recent activity", value=text.strip() or "-", inline=False)
+    return emb
+
+
+def _panel_card(game: Game, pid: str, now: datetime) -> discord.Embed:
     p = game.get(pid)
     s = game.s
     phase = game.state.phase

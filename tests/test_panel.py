@@ -50,6 +50,19 @@ class PanelEmbedTests(unittest.TestCase):
         self.assertIn("You won", panel_embed(g, "101", NOW).description)
 
 
+class RecentActivityTests(unittest.TestCase):
+    def test_recent_field_newest_first_and_capped(self):
+        g = game()
+        recent = [{"time": NOW.replace(minute=m).isoformat(), "text": f"event {m}"} for m in range(6)]
+        emb = panel_embed(g, "100", NOW, recent)
+        field = next(f for f in emb.fields if f.name == "Recent activity")
+        self.assertLess(field.value.index("event 5"), field.value.index("event 0"))
+        long = [{"time": NOW.isoformat(), "text": "x" * 300} for _ in range(6)]
+        field = next(f for f in panel_embed(g, "100", NOW, long).fields if f.name == "Recent activity")
+        self.assertLessEqual(len(field.value), 1024)
+        self.assertEqual(panel_embed(g, "100", NOW, []).fields, [])
+
+
 class PanelLayoutTests(unittest.TestCase):
     def test_views_build_in_every_phase(self):
         async def build():

@@ -120,6 +120,52 @@ class GameService:
                     return pact_id, pid
         return None
 
+    # ---- DM threads: server["dm_threads"][owner][other] = thread id (a private
+    #      thread in the owner's console for their conversation with `other`)
+
+    def dm_thread(self, owner: str, other: str) -> int | None:
+        return self.server.setdefault("dm_threads", {}).get(owner, {}).get(other)
+
+    def set_dm_thread(self, owner: str, other: str, thread_id: int | None) -> None:
+        threads = self.server.setdefault("dm_threads", {}).setdefault(owner, {})
+        if thread_id is None:
+            threads.pop(other, None)
+        else:
+            threads[other] = thread_id
+        self.save_server()
+
+    def dm_of_thread(self, thread_id: int) -> tuple[str, str] | None:
+        """(owner, other) for a DM thread."""
+        for owner, threads in self.server.get("dm_threads", {}).items():
+            for other, tid in threads.items():
+                if tid == thread_id:
+                    return owner, other
+        return None
+
+    def console_hook(self, pid: str) -> dict | None:
+        return self.server.setdefault("console_hooks", {}).get(pid)
+
+    def set_console_hook(self, pid: str, record: dict | None) -> None:
+        hooks = self.server.setdefault("console_hooks", {})
+        if record is None:
+            hooks.pop(pid, None)
+        else:
+            hooks[pid] = record
+        self.save_server()
+
+    # ---- recent activity shown on the panel card (instead of console messages)
+
+    RECENT_MAX = 6
+
+    def add_recent(self, pid: str, text: str) -> None:
+        items = self.server.setdefault("recent", {}).setdefault(pid, [])
+        items.append({"time": self.now().isoformat(), "text": text})
+        del items[:-self.RECENT_MAX]
+        self.save_server()
+
+    def recent(self, pid: str) -> list[dict]:
+        return self.server.get("recent", {}).get(pid, [])
+
     @staticmethod
     def is_fake(pid: str) -> bool:
         """Test-mode players have no Discord account."""

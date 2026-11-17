@@ -31,12 +31,18 @@ Every command is a slash command. Replies are **private** (only the person who r
 
 ## Control panel (the main way to play, built for phones)
 
-Every console has a **control panel** pinned at the top: a status card plus a menu and buttons. Each panel choice runs exactly the same game action, confirmation, and logging as the matching slash command below. The slash commands are a backup.
+Every console has a **control panel** that always sits at the **bottom** of the console, so it's right under your thumb on a phone. It's a status card plus a menu and buttons. Each panel choice runs exactly the same game action, confirmation, and logging as the matching slash command below. The slash commands are a backup.
 
 **Status card:**
 - **Living states:** AP, HP, range, and position; when your cooldown is ready; whether actions are open; info access; which states you can reach; and which states can reach you.
 - **Jurors:** your current vote and whether voting is open.
 - **Updates:** the card refreshes after every change to the game, and on demand with **Refresh**.
+- **Recent activity:** the last 6 private notices (gifts received, forwarded gifts from bought info, info expiring, being destroyed, pact removals or declines) are listed on the card instead of being posted as separate messages.
+
+**Keeping consoles clean:**
+- Every reply to something you do (command results, rejections, confirmations, menus) is **private** and disappears when dismissed.
+- The only messages that stay in your console are the panel and things you need to answer, such as **pact invitations** (removed once you accept or decline). When one arrives, the panel moves back below it.
+- **Conversations** with other states live in their own private threads (below).
 
 | Panel control | What it does |
 |---|---|
@@ -45,7 +51,7 @@ Every console has a **control panel** pinned at the top: a status card plus a me
 | **Choose an action…** menu (jurors) | **Vote** lists the surviving states. |
 | **Status** / **Board** | Your full status, or the board with your range marked, shown privately. |
 | **Public chat** / **Anonymous** | Opens a text box and posts to #public-chat (under your state name) or #anonymous-chat (no name). |
-| **Message a state** | Pick any state, then type in a text box. They get it in their console, with a Reply button. |
+| **Message a state** | Pick any state to open your **private conversation thread** with them (e.g. `↔ Veyran Empire`), created the first time. Type there like a normal chat. |
 | **Refresh** / **Help** | Updates the card / shows the command list. |
 
 The menus that open from the panel (direction grid, target list, confirmation) are private to you and expire after 2 minutes. If the panel ever goes missing, `/panel` posts a fresh one.
@@ -93,7 +99,13 @@ Available to living **and** eliminated players. Players are told that everything
 | Command | What it does |
 |---|---|
 | `/say message:<text>` | Posts in #public-chat under your **state name** (via the webhook). |
-| `/dm state:<state> message:<text>` | Sends a private message to another state's console, labeled with your state name. The message has a **Reply** button that opens a text box (a Discord modal) and sends your answer straight back. |
+| `/dm state:<state> message:<text>` | Sends a private message to another state. It appears in your conversation thread with them, and in theirs with you, under your state name. |
+
+**Conversation threads:**
+- Each pair of states talks in a private thread inside each player's console, such as `↔ Veyran Empire`, visible only to that player, the bot, and the admin.
+- **Typing:** type in the thread and the bot relays it to the other player's matching thread under your state name. A message sent with `/dm` shows up in your own thread as "*Your State* (you)".
+- **Limits:** threads don't count toward Discord's 500-channel limit. Quiet threads archive after a week and reopen when a new message arrives.
+- **Logging:** every message is in the history log.
 | `/anon message:<text>` | Posts in #anonymous-chat with no name at all. |
 
 ## Pacts: private group chats (console commands; you chat in pact channels)

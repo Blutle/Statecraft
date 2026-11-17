@@ -1,6 +1,6 @@
 """Interactive Discord UI: confirmations, DM replies, and the console control panel.
 
-The control panel is a pinned message in each player's console with an
+The control panel is a message kept at the bottom of each player's console with an
 action menu and buttons, built for phones. It is a front end only: every
 choice ends in the same engine call (and history record) as the matching
 slash command, and anything that spends AP or can't be undone goes through
@@ -152,7 +152,12 @@ class PactInviteButton(discord.ui.DynamicItem[discord.ui.Button], template=r"pac
         ui: UI = interaction.client.ui  # type: ignore[attr-defined]
         pid = str(interaction.user.id)
         res = await ui.svc.run(lambda g, now: g.respond_to_pact(pid, self.pact, self.ans == "y"))
-        await ui.reply(interaction, res, edit=True)
+        await ui.reply(interaction, res)
+        if res.ok and interaction.message:
+            try:
+                await interaction.message.delete()
+            except discord.HTTPException:
+                pass
 
 
 class PactCreateModal(discord.ui.Modal, title="Found a pact"):
@@ -399,7 +404,11 @@ class TargetView(discord.ui.View):
         elif self.kind == "vote":
             await ui.reply(i, await ui.svc.run(lambda g, now: g.vote(pid, tid, now=now)), edit=True)
         elif self.kind == "dm":
-            await i.response.send_modal(ChatModal(ui, "dm", tid, f"Message {t.state_name}"))
+            await i.response.defer(ephemeral=True, thinking=True)
+            thread = await ui.bot.router.open_dm_thread(pid, tid)
+            text = (f"Your conversation with **{t.state_name}**: {thread.mention}. Type there; it's relayed to them "
+                    "under your state name.") if thread else f"Couldn't open a conversation with {t.state_name}."
+            await i.edit_original_response(content=text, view=None)
 
 
 class AmountView(discord.ui.View):
@@ -457,7 +466,7 @@ class UI:
             return None
         return pid
 
-    async def reply(self, i: discord.Interaction, res: Result, ephemeral: bool = False, edit: bool = False):
+    async def reply(self, i: discord.Interaction, res: Result, ephemeral: bool = True, edit: bool = False):
         text = (res.message if res.ok else f"Rejected: {res.message}")[:2000]
         if edit:
             await i.response.edit_message(content=text, view=None, embed=None)
@@ -466,7 +475,7 @@ class UI:
         await self.bot.router.deliver(res.events)
         self.schedule_refresh()
 
-    async def ask(self, i: discord.Interaction, prompt: str, on_yes, ephemeral: bool = False, edit: bool = False):
+    async def ask(self, i: discord.Interaction, prompt: str, on_yes, ephemeral: bool = True, edit: bool = False):
         view = ConfirmView(i.user.id, on_yes)
         if edit:
             await i.response.edit_message(content=prompt, view=view, embed=None)
@@ -474,7 +483,7 @@ class UI:
             await i.response.send_message(prompt, view=view, ephemeral=ephemeral, allowed_mentions=NO_PINGS)
         view.expire = lambda text: i.edit_original_response(content=text, view=None)
 
-    async def confirm_action(self, i: discord.Interaction, prompt: str, fn, ephemeral: bool = False,
+    async def confirm_action(self, i: discord.Interaction, prompt: str, fn, ephemeral: bool = True,
                              edit: bool = False):
         """Ask before an engine call that spends AP or can't be undone.
 
@@ -526,8 +535,15 @@ class UI:
         view.add_item(PanelButton("help", "Help", B.secondary, 3, "❔"))
         return view
 
+    def _card(self, pid: str) -> discord.Embed:
+        return panel_embed(self.svc.game, pid, self.svc.now(), self.svc.recent(pid))
+
     async def post_panel(self, pid: str) -> None:
-        """Post a fresh pinned panel (removing the old one)."""
+        """Post a fresh panel at the bottom of the console, removing the old one.
+
+        Not pinned: phones open a channel scrolled to the bottom, so the
+        panel stays under the player's thumb, and pinning would add a
+        'pinned a message' notice each time."""
         ch = self.bot.get_channel(self.svc.console_of(pid) or 0)
         if not ch:
             return
@@ -537,13 +553,21 @@ class UI:
                 await ch.get_partial_message(old).delete()
             except discord.HTTPException:
                 pass
-        msg = await ch.send(embed=panel_embed(self.svc.game, pid, self.svc.now()), view=self.panel_view(pid))
-        try:
-            await msg.pin(reason="Statecraft control panel")
-        except discord.HTTPException:
-            pass
+        msg = await ch.send(embed=self._card(pid), view=self.panel_view(pid))
         panels[pid] = msg.id
         self.svc.save_server()
+
+    def schedule_repost(self, pid: str) -> None:
+        """Move a player's panel back below a new console message (coalesced)."""
+        tasks = self.__dict__.setdefault("_repost_tasks", {})
+        if (t := tasks.get(pid)) and not t.done():
+            return
+
+        async def run():
+            await asyncio.sleep(1.5)
+            await self.post_panel(pid)
+
+        tasks[pid] = asyncio.create_task(run())
 
     async def refresh_panel(self, pid: str) -> None:
         ch = self.bot.get_channel(self.svc.console_of(pid) or 0)
@@ -554,8 +578,7 @@ class UI:
             await self.post_panel(pid)
             return
         try:
-            await ch.get_partial_message(mid).edit(embed=panel_embed(self.svc.game, pid, self.svc.now()),
-                                                   view=self.panel_view(pid))
+            await ch.get_partial_message(mid).edit(embed=self._card(pid), view=self.panel_view(pid))
         except discord.NotFound:
             await self.post_panel(pid)
 
@@ -609,7 +632,7 @@ class UI:
             await i.response.send_message("Name your state first.", ephemeral=True)
             return
         if what == "refresh":
-            await i.response.edit_message(embed=panel_embed(g, pid, svc.now()), view=self.panel_view(pid))
+            await i.response.edit_message(embed=self._card(pid), view=self.panel_view(pid))
         elif what == "status":
             await i.response.send_message(own_status(g, pid, svc.now()), ephemeral=True)
         elif what == "board":
