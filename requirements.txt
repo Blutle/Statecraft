@@ -1,6 +1,4 @@
-# Runtime
 tzdata>=2024.1          # timezone database (Windows has none built in)
-
-# Coming with the Discord build:
-# discord.py
-# Pillow
+discord.py>=2.7,<3      # Discord bot
+Pillow>=13,<14          # board image rendering
+python-dotenv>=1.0      # loads DISCORD_TOKEN etc. from .env
