@@ -383,6 +383,25 @@ class Router:
             self.svc.server["guides"][key] = ids
             self.svc.save_server()
             report.append(f"posted #{ch.name} ({len(cards)} cards)")
+        report += await self._remove_stray_guide_copies()
+        return report
+
+    async def _remove_stray_guide_copies(self) -> list[str]:
+        """Delete bot messages in the guide channels that aren't the tracked guide cards."""
+        report = []
+        for key in ("rules", "how_to_play"):
+            ch = self.channel(key)
+            keep = set(self.svc.server.get("guides", {}).get(key, []))
+            if not ch or not keep:
+                continue
+            stray = [m async for m in ch.history(limit=200) if m.author.id == self.bot.user.id and m.id not in keep]
+            for m in stray:
+                try:
+                    await m.delete()
+                except discord.HTTPException:
+                    pass
+            if stray:
+                report.append(f"removed {len(stray)} old guide message(s) from #{ch.name}")
         return report
 
     async def refresh_board(self) -> None:

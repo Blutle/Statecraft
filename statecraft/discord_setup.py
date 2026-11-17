@@ -199,8 +199,8 @@ async def ensure_server(guild: discord.Guild, path: Path, echo=None) -> list[str
     if patched:
         report.append(f"blocked external apps for {patched} player channel(s)")
 
-    # Keep existing console channel records (created later by /join)
-    data["consoles"] = saved.get("consoles", {})
-    save_server(path, data)
+    # Keep everything else already recorded (consoles, panels, pacts, DM threads, guides, ...):
+    # setup only refreshes the layout keys it manages.
+    save_server(path, {**saved, **data})
     report.append(f"saved IDs to {path.name}")
     return report
