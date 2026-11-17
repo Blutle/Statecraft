@@ -1,0 +1,6 @@
+# Runtime
+tzdata>=2024.1          # timezone database (Windows has none built in)
+
+# Coming with the Discord build:
+# discord.py
+# Pillow

@@ -50,8 +50,8 @@ store.py                    ← JSON load/save (atomic)
 The spec allows "permission-isolated records." The simplest version:
 
 - On purchase, the bot posts **today's** gift log (sender, receiver, amount) to the purchaser's private console.
-- Until 8 PM, the bot also forwards each new gift to every console with active access.
-- There is no shared `#info` channel, so there is no message history to leak, and nothing to revoke at 8 PM: the forwarding simply stops.
+- Until 8:15 PM, the bot also forwards each new gift to every console with active access.
+- There is no shared `#info` channel, so there is no message history to leak, and nothing to revoke at 8:15 PM: the forwarding simply stops.
 
 ---
 
@@ -69,7 +69,8 @@ This extends the spec's example. Fields marked ★ are new.
     "timezone": "America/Chicago",
     "window_open": "14:00",
     "window_close": "20:00",
-    "vote_lock": "13:55",
+    "vote_lock": "13:45",
+    "info_expire": "20:15",
     "cooldown_minutes": 15,
     "daily_ap": 1,
     "starting_hp": 3,
@@ -78,7 +79,7 @@ This extends the spec's example. Fields marked ★ are new.
     "votes_per_ap": 3
   },
   "last_daily_tick": null,                      // ★ ISO date of last 2 PM processing
-  "last_window_close": null,                    // ★ ISO date of last 8 PM processing
+  "clock_marker": null,                         // ★ scheduler: events run up to this time
   "players": {
     "123456789": {
       "state_name": "The Republic of Aldren",
@@ -148,7 +149,7 @@ statecraft/
 
 ### Phase 1 — Rules Engine and CLI (the core of the project)
 
-> **Status (2026-11-17):** a command-line prototype is built (`play.bat`, or `py -m statecraft`) and 21 tests pass. It has no clock: the action window, cooldowns, and vote lock are deferred until the Discord migration, and `nextday` advances the day by hand. Messaging (`say`, `dm`, `anon`) is also deferred, because it's relay-only. The items below describe the full target.
+> **Status (2026-11-17):** the command-line prototype (`play.bat`) and the clock are built, with 55 tests passing. `statecraft/schedule.py` and `Game.run_due_events(now)` enforce the 2-8 PM window, the 15-minute shared cooldown (rejected actions don't start it), the 8 PM-1:45 PM jury voting period, the 8:15 PM info fade, and the 2 PM tick (jury tally, then daily AP). Missed events run on restart, each exactly once, and local times hold across DST. Engine methods take an optional `now`; the CLI passes none and stays clock-free, while the Discord bot always passes it. Messaging (`say`, `dm`, `anon`) is in the engine.
 
 **1a. Models and storage**
 - [ ] Dataclasses with `to_dict` / `from_dict`
@@ -189,15 +190,15 @@ statecraft/
 - [ ] Attack (1 AP): the target must be alive and in range. Handle elimination, and check for victory.
 - [ ] Upgrade range (2 AP)
 - [ ] Gift AP (amount sent): the target must be alive and in range, and the amount must be ≥ 1. Record it in `gifts_today`.
-- [ ] Buy info (1 AP): set `info_access[player]` to expire at today's 8 PM, and emit a public announcement
+- [x] Buy info (1 AP): access fades at today's 8:15 PM, and emit a public announcement
 - [ ] Rejected actions change **nothing**, and that includes the cooldown
 
 **1e. Schedule**
 - [ ] `is_window_open(now)` and `next_window_open(now)`
 - [ ] `run_due_events(now)`, in this order:
   - **2 PM:** tally jury votes (`votes // 3` AP each), announce the totals, clear the votes, give daily AP to living states, increment the day, clear `gifts_today`
-  - **8 PM:** expire info access, open jury voting
-- [ ] `vote(juror_id, target_id, now)`: only eliminated players can vote, from 8:00 PM until votes lock at **1:55 PM** (`vote_lock` setting), and only for a living target. Jurors may change their vote until the lock; the latest vote counts. The tally runs at 2:00 PM.
+  - **8 PM:** actions close, jury voting opens. **8:15 PM:** info access fades
+- [ ] `vote(juror_id, target_id, now)`: only eliminated players can vote, from 8:00 PM until votes lock at **1:45 PM** (`vote_lock` setting), and only for a living target. Jurors may change their vote until the lock; the latest vote counts. The tally runs at 2:00 PM.
 
 **1f. CLI simulator**
 - [ ] REPL commands: `add <id> <name>`, `start`, `as <id> move NE`, `as <id> attack <state>`, `time set …`, `time +15m`, `tick`, `board`, `status <id>`, `dump`
@@ -310,7 +311,7 @@ These are the ways a living state's owner could be exposed. Each one needs to be
 - **No admin remove-player command (2026-11-17):** a player who goes inactive keeps their state on the board, and other players can kill it. Hosting is decided after the Discord build.
 - **Minimum 12 players (2026-11-17):** set by `min_players`. `start force` (CLI) bypasses it, down to 2, for testing.
 - **Naming (2026-11-17):** "transfer" is now **"gift"** everywhere (`gift <state> <amount>`, `gifts_today`, the `GIFT` event). Old saves are converted when loaded.
-- Jurors can change their vote. Votes lock at 1:55 PM and are tallied at 2:00 PM.
+- Jurors can change their vote. Votes lock at 1:45 PM and are tallied at 2:00 PM. Info access fades at 8:15 PM, giving buyers 15 minutes after the window closes. (Both changed 2026-11-17.)
 - All states start with 0 AP, no matter when the game starts.
 
 **Still open (proposed defaults):**

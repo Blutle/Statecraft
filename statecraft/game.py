@@ -15,9 +15,10 @@ import functools
 import inspect
 import random
 from dataclasses import asdict
+from datetime import datetime, timedelta
 from typing import Callable
 
-from . import geometry
+from . import geometry, schedule
 from .models import Event, GameState, Player, Result
 
 STOPWORDS = {"the", "of", "and", "a", "an", "de", "la", "le", "du", "von", "van"}
@@ -194,7 +195,7 @@ class Game:
         return self.rng.sample(max(colors, key=len), n)
 
     @recorded("start")
-    def start(self, force: bool = False) -> Result:
+    def start(self, force: bool = False, *, now: datetime | None = None) -> Result:
         """Begin the game. Needs min_players (12); force allows down to 2 for testing."""
         if self.state.phase != "registration":
             return Result.fail("The game has already started.")
@@ -214,6 +215,8 @@ class Game:
             p.ap = 0
         self.state.phase = "active"
         self.state.day = 0
+        if now is not None:
+            self.state.clock_marker = now.isoformat()
         roster = ", ".join(f"{p.state_name} [{p.marker}] at {self.pos(p)}" for p in players)
         return self._done(Result(True, "Game started.", [Event(
             "GAME_START",
@@ -224,7 +227,10 @@ class Game:
 
     # ---------------------------------------------------------------- actions
 
-    def _actor(self, pid: str, cost: int) -> tuple[Player | None, str]:
+    def _actor(self, pid: str, cost: int, now: datetime | None = None) -> tuple[Player | None, str]:
+        """Shared checks for gameplay actions. With `now` (the Discord bot),
+        also enforces the action window and the per-player cooldown; without
+        it (CLI, tests) there is no clock."""
         if self.state.phase != "active":
             return None, "The game is not in progress."
         p = self.get(pid)
@@ -232,9 +238,28 @@ class Game:
             return None, "You are not a player in this game."
         if not p.alive:
             return None, "Your state has been eliminated. You can only vote with the jury."
+        if now is not None:
+            if not schedule.window_open(now, self.s):
+                opens = schedule.next_at(now, self.s, "window_open")
+                return None, (f"Actions are only allowed {self.s['window_open']}-{self.s['window_close']} "
+                              f"({self.s['timezone']}). The next window opens {schedule.fmt(opens, self.s)}.")
+            left = self.cooldown_remaining(p, now)
+            if left > timedelta(0):
+                return None, f"You're on cooldown for another {schedule.fmt_duration(left)}."
         if p.ap < cost:
             return None, f"Not enough AP: this costs {cost}, you have {p.ap}."
         return p, ""
+
+    def _stamp(self, p: Player, now: datetime | None) -> None:
+        """Start the action cooldown (successful actions only)."""
+        if now is not None:
+            p.last_action = now.isoformat()
+
+    def cooldown_remaining(self, p: Player, now: datetime) -> timedelta:
+        if not p.last_action:
+            return timedelta(0)
+        ready = datetime.fromisoformat(p.last_action) + timedelta(minutes=self.s["cooldown_minutes"])
+        return max(timedelta(0), ready - now)
 
     def _target(self, actor: Player, tid: str, verb: str) -> tuple[Player | None, str]:
         t = self.get(tid)
@@ -250,9 +275,9 @@ class Game:
         return t, ""
 
     @recorded("move")
-    def move(self, pid: str, direction: str) -> Result:
+    def move(self, pid: str, direction: str, *, now: datetime | None = None) -> Result:
         cost = self.s["move_cost"]
-        p, err = self._actor(pid, cost)
+        p, err = self._actor(pid, cost, now)
         if err:
             return Result.fail(err)
         d = direction.lower()
@@ -268,19 +293,21 @@ class Game:
         old = self.pos(p)
         p.x, p.y = nx, ny
         p.ap -= cost
+        self._stamp(p, now)
         return self._done(Result(True, f"Moved to {self.pos(p)}. AP left: {p.ap}.", [Event(
             "MOVE", public=f"{p.state_name} moved from {old} to {self.pos(p)}.", ping="opt_in")]))
 
     @recorded("attack")
-    def attack(self, pid: str, tid: str) -> Result:
+    def attack(self, pid: str, tid: str, *, now: datetime | None = None) -> Result:
         cost = self.s["attack_cost"]
-        p, err = self._actor(pid, cost)
+        p, err = self._actor(pid, cost, now)
         if err:
             return Result.fail(err)
         t, err = self._target(p, tid, "attack")
         if err:
             return Result.fail(err)
         p.ap -= cost
+        self._stamp(p, now)
         t.hp -= 1
         events: list[Event] = []
         if t.hp > 0:
@@ -325,28 +352,30 @@ class Game:
         return list(self.state.winners)
 
     @recorded("upgrade")
-    def upgrade(self, pid: str) -> Result:
+    def upgrade(self, pid: str, *, now: datetime | None = None) -> Result:
         cost = self.s["upgrade_cost"]
-        p, err = self._actor(pid, cost)
+        p, err = self._actor(pid, cost, now)
         if err:
             return Result.fail(err)
         p.ap -= cost
+        self._stamp(p, now)
         p.range_upgrades += 1
         r = self.range_of(p)
         return self._done(Result(True, f"Range is now {r}. AP left: {p.ap}.", [Event(
             "UPGRADE", public=f"{p.state_name} increased its range to {r}.", ping="opt_in")]))
 
     @recorded("gift")
-    def gift(self, pid: str, tid: str, amount: int) -> Result:
+    def gift(self, pid: str, tid: str, amount: int, *, now: datetime | None = None) -> Result:
         if amount < 1:
             return Result.fail("You must gift at least 1 AP.")
-        p, err = self._actor(pid, amount)
+        p, err = self._actor(pid, amount, now)
         if err:
             return Result.fail(err)
         t, err = self._target(p, tid, "gift AP to")
         if err:
             return Result.fail(err)
         p.ap -= amount
+        self._stamp(p, now)
         t.ap += amount
         self.state.gifts_today.append({"from": p.id, "to": t.id, "amount": amount})
         line = f"{p.state_name} gifted {t.state_name} {amount} AP"
@@ -358,21 +387,27 @@ class Game:
                                  [Event("GIFT", private=private)]))
 
     @recorded("buy_info")
-    def buy_info(self, pid: str) -> Result:
+    def buy_info(self, pid: str, *, now: datetime | None = None) -> Result:
         cost = self.s["info_cost"]
-        p, err = self._actor(pid, cost)
+        p, err = self._actor(pid, cost, now)
         if err:
             return Result.fail(err)
         if pid in self.state.info_access:
             return Result.fail("You already have information access for today.")
         p.ap -= cost
+        self._stamp(p, now)
         self.state.info_access.append(pid)
         return self._done(Result(
             True,
-            f"Information access purchased for the rest of Day {self.state.day}. AP left: {p.ap}.\n"
+            f"Information access purchased until {self._info_until(now)}. AP left: {p.ap}.\n"
             + self.gift_report(),
             [Event("INFO_PURCHASE", public=f"{p.state_name} purchased information access.", ping="opt_in")],
         ))
+
+    def _info_until(self, now: datetime | None) -> str:
+        if now is None:
+            return f"the end of Day {self.state.day}"
+        return schedule.fmt(schedule.info_expiry(now, self.s), self.s)
 
     def gift_report(self) -> str:
         if not self.state.gifts_today:
@@ -383,7 +418,7 @@ class Game:
         return "\n".join(lines)
 
     @recorded("vote")
-    def vote(self, pid: str, tid: str) -> Result:
+    def vote(self, pid: str, tid: str, *, now: datetime | None = None) -> Result:
         if self.state.phase != "active":
             return Result.fail("The game is not in progress.")
         p = self.get(pid)
@@ -391,6 +426,9 @@ class Game:
             return Result.fail("You are not a player in this game.")
         if p.alive:
             return Result.fail("Only eliminated players (the Jury) can vote.")
+        if now is not None and not schedule.voting_open(now, self.s):
+            return Result.fail(f"Jury voting is open {self.s['window_close']} until {self.s['vote_lock']} "
+                               f"the next day ({self.s['timezone']}). Votes are locked right now.")
         t = self.get(tid)
         if not t or not t.alive:
             return Result.fail("You can only vote for a surviving state.")
@@ -402,7 +440,7 @@ class Game:
     # ------------------------------------------------------------- day cycle
 
     @recorded("next_day")
-    def next_day(self) -> Result:
+    def next_day(self, *, now: datetime | None = None) -> Result:
         """Close the current day and open the next one.
 
         In the Discord version this is split between 8 PM (info access expires)
@@ -470,6 +508,41 @@ class Game:
         return rows
 
     # ------------------------------------------------------------------ admin
+
+    # ------------------------------------------------------------- scheduler
+
+    def run_due_events(self, now: datetime) -> Result:
+        """Run every scheduled event due since the last run, oldest first.
+
+        Called periodically by the bot. Each event runs exactly once, so
+        restarts never repeat a tick, and missed ticks (the bot was offline)
+        catch up in order."""
+        if self.state.phase != "active":
+            return Result(True)
+        if not self.state.clock_marker:
+            self.state.clock_marker = now.isoformat()
+            return Result(True)
+        events: list[Event] = []
+        ran = []
+        for when, kind in schedule.due_events(datetime.fromisoformat(self.state.clock_marker), now, self.s):
+            if self.state.phase != "active":
+                break
+            res = self.next_day(now=when) if kind == "daily_tick" else self.expire_info(now=when)
+            events += res.events
+            ran.append(f"{kind} @ {schedule.fmt(when, self.s)}")
+            self.state.clock_marker = when.isoformat()
+        if self.state.phase == "active":
+            self.state.clock_marker = now.isoformat()
+        return Result(True, ", ".join(ran), events)
+
+    @recorded("info_expire")
+    def expire_info(self, *, now: datetime | None = None) -> Result:
+        """8:15 PM: purchased information access fades."""
+        had = list(self.state.info_access)
+        self.state.info_access = []
+        private = {pid: "Your information access has expired." for pid in had if self.get(pid).alive}
+        return self._done(Result(True, f"Information access expired for {len(had)} state(s).",
+                                 [Event("INFO_EXPIRED", private=private)] if private else []))
 
     @recorded("admin_declare_winners")
     def declare_winners(self, pids: list[str]) -> Result:
@@ -573,7 +646,9 @@ class Game:
     def _record(self, action: str, params: dict, result: Result, day_before: int) -> None:
         if not self.recorder:
             return
+        now = params.pop("now", None)
         rec = {
+            "game_time": now.isoformat() if now else None,
             "day": day_before,
             "phase": self.state.phase,
             "action": action,

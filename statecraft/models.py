@@ -17,6 +17,12 @@ DEFAULT_SETTINGS = {
     "votes_per_ap": 3,
     "board_size": 0,             # 0 = automatic, using board_scale_pct
     "board_scale_pct": 75,       # automatic side = players * pct // 100 (16 players -> 12x12)
+    "timezone": "America/Chicago",
+    "window_open": "14:00",      # daily tick (jury tally, then daily AP) and actions open
+    "window_close": "20:00",     # actions close, jury voting opens
+    "info_expire": "20:15",      # purchased information access fades
+    "vote_lock": "13:45",        # jury votes lock until the 14:00 tally
+    "cooldown_minutes": 15,      # per-player cooldown after every gameplay action
     "min_players": 12,           # fewest players needed to start (start force bypasses, min 2)
     "spawn_no_cardinal_touch": 1,  # 1 = no two states start directly N/S/E/W of each other
 }
@@ -35,6 +41,7 @@ class Player:
     range_upgrades: int = 0
     alive: bool = True
     eliminated_on_day: int | None = None
+    last_action: str | None = None   # ISO time of last gameplay action (cooldown)
 
 
 @dataclass
@@ -51,7 +58,8 @@ class GameState:
     gifts_today: list[dict] = field(default_factory=list)
     log: list[dict] = field(default_factory=list)              # public event history
     next_player_num: int = 1
-    winners: list[str] = field(default_factory=list)          # last survivor, or admin-declared
+    winners: list[str] = field(default_factory=list)
+    clock_marker: str | None = None  # scheduler: time up to which events have run          # last survivor, or admin-declared
 
     def to_dict(self) -> dict:
         return asdict(self)
