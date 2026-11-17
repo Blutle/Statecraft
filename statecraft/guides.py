@@ -174,6 +174,9 @@ def how_to_play(s: dict) -> list[tuple[str, str]]:
         ("🔔 Notifications",
          "• **Attacks, destructions, and big announcements** always ping everyone playing.\n"
          "• Moves, upgrades, and Spying only ping you if you opt in: `/notify on` (or `/notify off`).\n"
+         "• Anything new in your console, every pact message, and every message from another State pings you.\n"
+         "• To silence one pact or conversation, use `/notify off` and pick it under **chat**. Its messages "
+         "still arrive, just without a ping. `/notify on` with the same chat turns it back on.\n"
          "• **#action-log** shows everything that happens, in order."),
 
         ("⌨️ Slash commands (backup)",

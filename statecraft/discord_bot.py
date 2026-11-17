@@ -218,7 +218,11 @@ class Router:
         rec = self.svc.pact_copy(pact_id, pid)
         if rec:
             hook = discord.Webhook.partial(rec["hook_id"], rec["hook_token"], client=self.bot)
-            await hook.send(text[:2000], username=username[:80], allowed_mentions=NO_PINGS)
+            if self.svc.muted(pid, f"pact:{pact_id}"):
+                await hook.send(text[:2000], username=username[:80], allowed_mentions=NO_PINGS)
+            else:   # @mention the reader (their private copy, so it reveals nothing)
+                await hook.send(f"{text[:1960]}\n-# <@{pid}>", username=username[:80],
+                                allowed_mentions=ping_only(pid))
 
     async def pact_notice(self, pact_id: str, text: str, exclude: str | None = None) -> None:
         pc = self.svc.game.state.pacts.get(pact_id)
@@ -325,7 +329,8 @@ class Router:
         if self.svc.is_fake(recipient):
             await self.admin_log(f"[DM {s_name} -> {r_name}] {text}")
         else:
-            await self.post_in_dm_thread(recipient, sender, text, s_name, ping=True)
+            await self.post_in_dm_thread(recipient, sender, text, s_name,
+                                         ping=not self.svc.muted(recipient, f"dm:{sender}"))
         if echo and not self.svc.is_fake(sender):
             await self.post_in_dm_thread(sender, recipient, text, f"{s_name} (you)")
 
@@ -798,11 +803,38 @@ def register_commands(bot: StatecraftBot) -> None:
     async def help_cmd(i: discord.Interaction):
         await i.response.send_message(HELP, ephemeral=True)
 
-    @tree.command(description="Opt in or out of pings for minor events")
+    def chat_choices(pid: str) -> list[tuple[str, str]]:
+        """(label, key) for every pact the player is in and every conversation thread they have."""
+        g = svc.game
+        out = [(f"Pact: {pc['name']}", f"pact:{pc['id']}") for pc in g.pacts_of(pid)]
+        for other in svc.server.get("dm_threads", {}).get(pid, {}):
+            if o := g.get(other):
+                out.append((f"Conversation: {o.state_name}", f"dm:{other}"))
+        return out
+
+    async def chats_autocomplete(i: discord.Interaction, current: str):
+        pid, cur = str(i.user.id), current.lower()
+        return [app_commands.Choice(name=label[:100], value=key) for label, key in chat_choices(pid)
+                if cur in label.lower()][:25]
+
+    @tree.command(description="Turn pings on or off: minor events, or one pact or conversation")
     @app_commands.choices(setting=[app_commands.Choice(name="on", value="on"),
                                    app_commands.Choice(name="off", value="off")])
-    async def notify(i: discord.Interaction, setting: app_commands.Choice[str]):
-        if not await ui.console_pid(i):
+    @app_commands.describe(chat="A pact or conversation to mute or unmute (leave out for minor-event pings)")
+    @app_commands.autocomplete(chat=chats_autocomplete)
+    async def notify(i: discord.Interaction, setting: app_commands.Choice[str], chat: str | None = None):
+        if not (pid := await ui.console_pid(i)):
+            return
+        if chat is not None:
+            label = dict((k, lbl) for lbl, k in chat_choices(pid)).get(chat)
+            if not label:
+                await i.response.send_message("Rejected: pick one of your pacts or conversations from the list.",
+                                              ephemeral=True)
+                return
+            svc.set_muted(pid, chat, setting.value == "off")
+            state = "on" if setting.value == "on" else "off (messages still arrive, without a ping)"
+            await i.response.send_message(f"Pings for **{label}** are now **{state}**.", ephemeral=True,
+                                          allowed_mentions=NO_PINGS)
             return
         rid = svc.role_id("updates")
         if rid and isinstance(i.user, discord.Member):

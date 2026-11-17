@@ -49,7 +49,7 @@ Every console has a **control panel** that always sits at the **bottom** of the 
 - **You get @mentioned** whenever something arrives for you, so Discord notifies you:
   - A Recent activity notice, such as a Gift received, your State destroyed, a referee change, Spy forwards, or a pact decline. The panel is reposted at the bottom with a small "@you new activity" line, and a burst of notices gives one ping.
   - A pact invitation.
-  - Each incoming message in a conversation thread, with a small @mention line under it.
+  - Each incoming message in a conversation thread, and each message in a pact channel, with a small @mention line under it. Mute one with `/notify off chat:<pact or conversation>`.
   - Only you and the referee can see your console, so the mention reveals nothing. Your own actions and your own messages never ping you.
 
 | Panel control | What it does |
@@ -161,6 +161,7 @@ Jury discussion happens in #jury. It's normal chat, not a command.
 | Command | What it does |
 |---|---|
 | `/notify on` / `/notify off` | Opts in or out of `@Statecraft-Updates`, the pings for moves, upgrades, and info purchases. Attacks and eliminations always ping everyone. |
+| `/notify on\|off chat:<pact or conversation>` | Unmutes or mutes **one** pact or conversation thread (autocomplete lists yours). Pact messages and incoming DMs **ping by default**: each carries a small @mention line for the reader only. Muted chats still receive messages, without the ping. Stored per player in `server.json`. |
 
 ---
 

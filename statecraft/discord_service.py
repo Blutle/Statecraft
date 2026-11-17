@@ -157,6 +157,20 @@ class GameService:
 
     RECENT_MAX = 6
 
+    # ---- per-chat mutes: server["mutes"][pid] = ["pact:<pact id>", "dm:<other pid>", ...]
+    # Pact messages and incoming DMs @mention the reader unless they muted that chat.
+
+    def muted(self, pid: str, key: str) -> bool:
+        return key in self.server.get("mutes", {}).get(pid, [])
+
+    def set_muted(self, pid: str, key: str, muted: bool) -> None:
+        keys = self.server.setdefault("mutes", {}).setdefault(pid, [])
+        if muted and key not in keys:
+            keys.append(key)
+        elif not muted and key in keys:
+            keys.remove(key)
+        self.save_server()
+
     def add_recent(self, pid: str, text: str) -> None:
         items = self.server.setdefault("recent", {}).setdefault(pid, [])
         items.append({"time": self.now().isoformat(), "text": text})

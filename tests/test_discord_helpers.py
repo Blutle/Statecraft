@@ -160,6 +160,22 @@ class GuideCardDiffTests(unittest.TestCase):
         self.assertFalse(_same_card(SimpleNamespace(embeds=[live]), edited))
 
 
+class ChatMuteTests(unittest.TestCase):
+    def test_mute_and_unmute_one_chat(self):
+        from types import SimpleNamespace
+        from statecraft.discord_service import GameService
+        svc = SimpleNamespace(server={}, save_server=lambda: None)
+        muted = lambda pid, key: GameService.muted(svc, pid, key)
+        self.assertFalse(muted("1", "pact:k1"))                  # pings by default
+        GameService.set_muted(svc, "1", "pact:k1", True)
+        GameService.set_muted(svc, "1", "pact:k1", True)         # idempotent
+        self.assertTrue(muted("1", "pact:k1"))
+        self.assertFalse(muted("1", "dm:2"))
+        self.assertFalse(muted("2", "pact:k1"))                  # per player
+        GameService.set_muted(svc, "1", "pact:k1", False)
+        self.assertEqual(svc.server["mutes"]["1"], [])
+
+
 class ReactionPermissionTests(unittest.TestCase):
     def test_reactions_off_outside_the_jury(self):
         from statecraft import discord_setup as ds
