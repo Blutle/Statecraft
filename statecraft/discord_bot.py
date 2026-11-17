@@ -357,10 +357,18 @@ class Router:
                     pass
 
     async def post_guides(self) -> list[str]:
-        """Post (or update in place) the #rules and #how-to-play guides."""
+        """Post (or update in place) the #rules and #how-to-play guides, and
+        the pinned welcome card in #register."""
         report = []
         s = self.svc.game.s
-        for key, sections in (("rules", guides.rules(s)), ("how_to_play", guides.how_to_play(s))):
+
+        def mention(key: str) -> str:
+            cid = self.svc.channel_id(key)
+            return f"<#{cid}>" if cid else f"#{key.replace('_', '-')}"
+
+        welcome = guides.register(s, mention("rules"), mention("how_to_play"))
+        for key, sections in (("rules", guides.rules(s)), ("how_to_play", guides.how_to_play(s)),
+                              ("register", welcome)):
             ch = self.channel(key)
             if not ch:
                 report.append(f"no #{key.replace('_', '-')} channel (run /admin setup)")
@@ -399,13 +407,29 @@ class Router:
             self.svc.server["guides"][key] = ids
             self.svc.save_server()
             report.append(f"posted #{ch.name} ({len(cards)} cards)")
+            if key == "register":
+                report.append(await self._pin(ch, ids[0]))
         report += await self._remove_stray_guide_copies()
         return report
+
+    async def _pin(self, ch: discord.TextChannel, mid: int) -> str:
+        """Pin a message and remove Discord's "pinned a message" notice."""
+        try:
+            await ch.get_partial_message(mid).pin(reason="Statecraft welcome")
+        except discord.HTTPException as e:
+            return f"couldn't pin the #{ch.name} welcome ({e.text or e.status}); pin it by hand"
+        async for m in ch.history(limit=5):
+            if m.type == discord.MessageType.pins_add and m.author.id == self.bot.user.id:
+                try:
+                    await m.delete()
+                except discord.HTTPException:
+                    pass
+        return f"pinned the #{ch.name} welcome"
 
     async def _remove_stray_guide_copies(self) -> list[str]:
         """Delete bot messages in the guide channels that aren't the tracked guide cards."""
         report = []
-        for key in ("rules", "how_to_play"):
+        for key in ("rules", "how_to_play", "register"):
             ch = self.channel(key)
             keep = set(self.svc.server.get("guides", {}).get(key, []))
             if not ch or not keep:
@@ -1128,9 +1152,10 @@ def register_commands(bot: StatecraftBot) -> None:
         svc.server = {**discord_setup.load_server(svc.cfg.server_file), **keep}
         svc.save_server()
         bot._webhook = None
+        await bot.router.post_guides()             # the new #register needs its pinned welcome
 
     FRESH_NOTE = ("Also wipe the game channels (board, action log, chats, jury, register) by recreating them "
-                  "empty. Rules, how-to-play, and the admin channel are kept.")
+                  "empty. Rules, how-to-play, and the admin channel are kept; #register gets its welcome back.")
 
     @admin.command(description="Wipe the game (keeps the old history log)")
     @app_commands.describe(fresh_channels=FRESH_NOTE)

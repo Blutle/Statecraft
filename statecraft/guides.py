@@ -97,6 +97,22 @@ def rules(s: dict) -> list[tuple[str, str]]:
     ]
 
 
+def register(s: dict, rules_ch: str = "#rules", how_ch: str = "#how-to-play") -> list[tuple[str, str]]:
+    """The pinned welcome card in #register. The channel names come in as
+    mentions so they're clickable in Discord."""
+    return [
+        ("🏛️ Welcome to Statecraft",
+         "**Type `/join` in this channel to register a State.**\n\n"
+         "• You'll get a **private console**, a channel only you (and the referee) can see. You name your State "
+         "and pick its color there, never here, so nobody can tell which State is yours.\n"
+         f"• The game needs at least **{s['min_players']} States**. The referee starts it once registration "
+         "closes.\n"
+         "• Everything you send through the bot is recorded for the post-game summary.\n\n"
+         f"📜 Game rules: {rules_ch}\n"
+         f"❔ How to use the bot, consoles, messages, and pacts: {how_ch}"),
+    ]
+
+
 def how_to_play(s: dict) -> list[tuple[str, str]]:
     close, fade = _t(s["window_close"]), _t(s["info_expire"])
     return [

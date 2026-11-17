@@ -163,7 +163,7 @@ Jury discussion happens in #jury. It's normal chat, not a command.
 | Command | What it does |
 |---|---|
 | `/admin setup` | Creates or repairs roles, channels, permissions, and the webhook, and posts or updates the guides. Safe to run any time. |
-| `/admin guides` | Posts or updates the **#rules** (the game) and **#how-to-play** (using the bot) guides. They're written in `statecraft/guides.py`, and their numbers (times, costs, cooldown, limits) come from the game settings. Re-run it after editing either. |
+| `/admin guides` | Posts or updates the **#rules** (the game) and **#how-to-play** (using the bot) guides, plus the **pinned welcome card in #register** (type `/join`, links to the two guides). `/admin setup` and fresh-channel wipes post them too. They're written in `statecraft/guides.py`, and their numbers (times, costs, cooldown, limits) come from the game settings. Re-run it after editing either. |
 | `/admin open` | Opens registration for a new game (enables `/join`). |
 | `/admin start` | Closes registration, places the states (needs 12+ players), posts the board, and announces the state names without owners. The first AP arrives at the next 2:00 PM. |
 | `/admin status` | Full view: phase, day, and every state with its owner, AP, HP, position, and cooldown. Also shows tonight's ballots and who is Spying. |
