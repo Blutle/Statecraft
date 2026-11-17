@@ -167,42 +167,59 @@ class Router:
         if ev.kind == "PACT_KICKED":
             await self.to_player(d["member"], f"You were removed from the pact **{pc['name']}**.")
 
-    async def pact_category(self, guild: discord.Guild) -> discord.CategoryChannel:
-        """A pact category with room (Discord allows 50 channels per category)."""
-        ids = self.svc.server.setdefault("pact_categories", [])
-        for cid in ids:
-            cat = guild.get_channel(cid)
-            if cat and len(cat.channels) < 50:
+    async def state_category(self, guild: discord.Guild, pid: str | None = None) -> discord.CategoryChannel | None:
+        """A "Your State" category with room for one more channel.
+
+        Consoles and pact copies share it, so each player sees their console
+        and their pacts together at the top. Discord allows 50 channels per
+        category; past that the bot adds another "Your State" category, and
+        each player only sees the ones holding their own channels. A player's
+        pact copies go next to their console when there's room."""
+        server = self.svc.server
+        extra = server.setdefault("state_categories", [])
+        cats = [c for c in (guild.get_channel(cid or 0) for cid in [server.get("console_category_id"), *extra]) if c]
+        if pid:
+            console = guild.get_channel(self.svc.console_of(pid) or 0)
+            if console and console.category and len(console.category.channels) < 50:
+                return console.category
+        for cat in cats:
+            if len(cat.channels) < 50:
                 return cat
         cat = await guild.create_category(
-            f"Statecraft Pacts {len(ids) + 1}" if ids else "Statecraft Pacts",
+            discord_setup.CONSOLE_CATEGORY,
             overwrites={guild.default_role: discord.PermissionOverwrite(view_channel=False),
                         guild.me: discord.PermissionOverwrite(**discord_setup.BOT_PERMS)},
-            reason="Statecraft pacts")
-        ids.append(cat.id)
+            position=(cats[-1].position + 1) if cats else 0, reason="Statecraft: more room for consoles and pacts")
+        extra.append(cat.id)
         self.svc.save_server()
         return cat
 
-    # ---- Spy: a private #spy channel per spying State, for the rest of the day
+    # ---- Spy: a private "Spy log" thread in the spy's console, for the rest of the day
     #
     # Not one shared channel: Discord lists everyone who can see a channel in
     # its member list, so spies would see each other's real names next to the
-    # public "X is spying" announcements. Each spy gets their own channel
-    # (server["spy_channels"][pid]), created when they Spy and deleted when
-    # access ends (8:15 PM, destruction, or the next day).
+    # public "X is spying" announcements. Each spy gets a private thread in
+    # their own console (server["spy_threads"][pid]), opened when they Spy. When
+    # access ends (8:15 PM, destruction, or the next day) the bot removes them
+    # from it, so it disappears for them; the referee can still read it.
 
-    async def spy_category(self, guild: discord.Guild) -> discord.CategoryChannel:
-        cat = guild.get_channel(self.svc.server.get("spy_category_id") or 0)
-        if cat:
-            return cat
-        cat = await guild.create_category(
-            "Statecraft Spies",
-            overwrites={guild.default_role: discord.PermissionOverwrite(view_channel=False),
-                        guild.me: discord.PermissionOverwrite(**discord_setup.BOT_PERMS)},
-            reason="Statecraft spies")
-        self.svc.server["spy_category_id"] = cat.id
-        self.svc.save_server()
-        return cat
+    async def _thread(self, tid: int) -> discord.Thread | None:
+        th = self.bot.get_channel(tid)
+        if th is None:
+            try:
+                th = await self.bot.fetch_channel(tid)
+            except (discord.NotFound, discord.Forbidden):
+                return None
+        return th
+
+    async def _drop_thread_notice(self, console: discord.TextChannel) -> None:
+        """Remove the "started a thread" notice Discord posts in the console."""
+        try:
+            async for m in console.history(limit=5):
+                if m.type == discord.MessageType.thread_created:
+                    await m.delete()
+        except discord.HTTPException:
+            pass
 
     def _gift_line(self, gf: dict) -> str:
         g = self.svc.game
@@ -210,54 +227,47 @@ class Router:
         return f"🎁 **{a.state_name}** `{a.marker}` gifted **{b.state_name}** `{b.marker}` {gf['amount']} AP"
 
     async def sync_spy_channels(self, events: list[Event]) -> None:
-        """Open a spy channel for each new spy (with today's Gifts so far),
-        close channels whose access ended, and post new Gifts to the rest."""
+        """Open a Spy log thread for each new spy (with today's Gifts so far),
+        close threads whose access ended, and post new Gifts to the rest."""
         g, server = self.svc.game, self.svc.server
-        have: dict = server.setdefault("spy_channels", {})
+        have: dict = server.setdefault("spy_threads", {})
         want = {pid for pid in g.state.info_access if not self.svc.is_fake(pid)}
-        guild = self.bot.get_guild(self.svc.cfg.guild_id)
-        if not guild:
-            return
         for pid in [p for p in have if p not in want]:
-            ch = guild.get_channel(have.pop(pid))
+            th = await self._thread(have.pop(pid))
             self.svc.save_server()
-            if ch:
+            if th:
                 try:
-                    await ch.delete(reason="Statecraft: Spy access ended")
-                except discord.NotFound:
+                    await th.send("*Spy access has ended. This log closes now.*", allowed_mentions=NO_PINGS)
+                    await th.remove_user(discord.Object(int(pid)))     # it vanishes from their console
+                    await th.edit(archived=True, locked=True)
+                except discord.HTTPException:
                     pass
         created = set()
         for pid in [p for p in want if p not in have]:
-            try:
-                member = await guild.fetch_member(int(pid))
-            except (discord.NotFound, ValueError):
+            console = self.bot.get_channel(self.svc.console_of(pid) or 0)
+            if not console:
                 continue
-            ch = await guild.create_text_channel(
-                f"spy-{secrets.token_hex(2)}", category=await self.spy_category(guild),
-                topic="Your Spy log: every Gift made today. Only you can see this channel.",
-                overwrites={guild.default_role: discord.PermissionOverwrite(view_channel=False),
-                            guild.me: discord.PermissionOverwrite(**discord_setup.BOT_PERMS),
-                            member: discord.PermissionOverwrite(view_channel=True, read_message_history=True,
-                                                                send_messages=False,
-                                                                **discord_setup.PLAYER_PRIVATE)},
-                reason="Statecraft spy")
-            have[pid] = ch.id
+            th = await console.create_thread(name=f"🕵️ Spy log · Day {g.state.day}",
+                                             type=discord.ChannelType.private_thread, invitable=False,
+                                             auto_archive_duration=1440, reason="Statecraft spy")
+            await th.add_user(discord.Object(int(pid)))
+            await self._drop_thread_notice(console)
+            have[pid] = th.id
             self.svc.save_server()
             created.add(pid)
             until = schedule.fmt(schedule.info_expiry(self.svc.now(), g.s), g.s)
             gifts = "\n".join(self._gift_line(gf) for gf in g.state.gifts_today) or "*No Gifts yet today.*"
             card = discord.Embed(title=f"🕵️ Spy log · Day {g.state.day}", colour=0x2C2F33,
                                  description=f"{gifts}\n\nNew Gifts appear here as they happen. "
-                                             f"This channel closes **{until}**.")
-            await ch.send(f"<@{pid}>", embed=card, allowed_mentions=ping_only(pid))
-            self.svc.add_recent(pid, f"🕵️ You're spying: your Spy log is open in {ch.mention}")
+                                             f"This log closes **{until}**.")
+            await th.send(f"<@{pid}>", embed=card, allowed_mentions=ping_only(pid))
+            self.svc.add_recent(pid, f"🕵️ You're spying: your Spy log is open in {th.mention}")
         for ev in events:
             if ev.kind != "GIFT":
                 continue
-            for pid, cid in have.items():
-                ch = guild.get_channel(cid)
-                if pid not in created and ch:
-                    await ch.send(f"{self._gift_line(ev.data)}\n-# <@{pid}>", allowed_mentions=ping_only(pid))
+            for pid, tid in have.items():
+                if pid not in created and (th := await self._thread(tid)):
+                    await th.send(f"{self._gift_line(ev.data)}\n-# <@{pid}>", allowed_mentions=ping_only(pid))
 
     async def ensure_pact_copy(self, pact_id: str, pid: str) -> None:
         if self.svc.is_fake(pid) or self.svc.pact_copy(pact_id, pid):
@@ -267,7 +277,7 @@ class Router:
         member = await guild.fetch_member(int(pid))
         slug = "".join(c if c.isalnum() else "-" for c in pc["name"].lower()).strip("-") or "pact"
         ch = await guild.create_text_channel(
-            f"pact-{slug}"[:90], category=await self.pact_category(guild),
+            f"pact-{slug}"[:90], category=await self.state_category(guild, pid),
             topic="Messages you type here are relayed to the other members under your state name.",
             overwrites={guild.default_role: discord.PermissionOverwrite(view_channel=False),
                         guild.me: discord.PermissionOverwrite(**discord_setup.BOT_PERMS),
@@ -369,13 +379,7 @@ class Router:
                                          reason="Statecraft private conversation")
         await th.add_user(discord.Object(int(owner)))
         self.svc.set_dm_thread(owner, other, th.id)
-        # Remove the "started a thread" notice from the console, if Discord posted one
-        try:
-            async for m in console.history(limit=5):
-                if m.type == discord.MessageType.thread_created:
-                    await m.delete()
-        except discord.HTTPException:
-            pass
+        await self._drop_thread_notice(console)
         await th.send(f"Private conversation with **{o.state_name}**. Type here: your messages are relayed to them "
                       "under your state name, and theirs appear here. Nobody sees anyone's Discord account. "
                       "Everything is logged for the post-game summary.", allowed_mentions=NO_PINGS)
@@ -726,7 +730,7 @@ def register_commands(bot: StatecraftBot) -> None:
                               ephemeral=True)
 
     async def create_console(guild: discord.Guild, member: discord.abc.User) -> discord.TextChannel:
-        cat = guild.get_channel(svc.server.get("console_category_id"))
+        cat = await bot.router.state_category(guild)
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
             guild.me: discord.PermissionOverwrite(**discord_setup.BOT_PERMS),
@@ -880,8 +884,8 @@ def register_commands(bot: StatecraftBot) -> None:
     async def spylog(i: discord.Interaction):
         if pid := await ui.console_pid(i):
             if pid in svc.game.state.info_access:
-                cid = svc.server.get("spy_channels", {}).get(pid)
-                where = f"Your Spy log channel: <#{cid}>\n" if cid else ""
+                cid = svc.server.get("spy_threads", {}).get(pid)
+                where = f"Your Spy log: <#{cid}>\n" if cid else ""
                 await i.response.send_message(f"{where}```\n{svc.game.gift_report()}\n```", ephemeral=True)
             else:
                 await i.response.send_message("You're not spying today. Use `/spy` (1 AP).",
@@ -1014,7 +1018,7 @@ def register_commands(bot: StatecraftBot) -> None:
         """Delete consoles and pact channels, and remove game roles. Keeps game.json.
 
         Works from the records *and* by location: every channel in the
-        console category and in any "Statecraft Pacts" or "Statecraft Spies"
+        console category, overflow "Your State" categories, and older "Statecraft Pacts" or "Statecraft Spies"
         category goes, even
         ones the records lost track of. Discord rate-limits bulk deletes;
         discord.py waits and retries, so this can take a minute."""
@@ -1028,11 +1032,15 @@ def register_commands(bot: StatecraftBot) -> None:
         doomed |= {rec["channel"] for copies in svc.pact_channels().values() for rec in copies.values()}
         console_cat = guild.get_channel(svc.server.get("console_category_id") or 0)
         pact_cats = {guild.get_channel(cid) for cid in svc.server.get("pact_categories", [])}
-        pact_cats |= {c for c in guild.categories if c.name.startswith("Statecraft Pacts")}
-        doomed |= set(svc.server.get("spy_channels", {}).values())
-        pact_cats.add(guild.get_channel(svc.server.get("spy_category_id") or 0))     # spy channels go the same way
+        pact_cats |= {c for c in guild.categories if c.name.startswith("Statecraft Pacts")}   # older layout
+        # Overflow "Your State" categories go; the main one (console_cat) is kept for the next game
+        pact_cats |= {guild.get_channel(cid) for cid in svc.server.get("state_categories", [])}
+        pact_cats |= {c for c in guild.categories if c.name == discord_setup.CONSOLE_CATEGORY and c != console_cat}
+        doomed |= set(svc.server.get("spy_channels", {}).values())                        # older layout
+        pact_cats.add(guild.get_channel(svc.server.get("spy_category_id") or 0))
         pact_cats |= {c for c in guild.categories if c.name.startswith("Statecraft Spies")}
         pact_cats.discard(None)
+        pact_cats.discard(console_cat)
         for cat in [console_cat, *pact_cats]:
             if cat:
                 doomed |= {ch.id for ch in cat.channels}
@@ -1046,7 +1054,9 @@ def register_commands(bot: StatecraftBot) -> None:
             svc.set_console(pid, None)
         svc.server["pact_channels"] = {}
         svc.server["pact_categories"] = []
-        svc.server["spy_channels"] = {}
+        svc.server["state_categories"] = []
+        svc.server["spy_threads"] = {}             # the threads went with the consoles
+        svc.server.pop("spy_channels", None)
         svc.server.pop("spy_category_id", None)
         for key in ("panels", "dm_threads", "console_hooks", "recent"):
             svc.server[key] = {}

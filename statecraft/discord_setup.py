@@ -14,7 +14,7 @@ from pathlib import Path
 import discord
 
 CATEGORY = "Statecraft"
-CONSOLE_CATEGORY = "Statecraft Consoles"
+CONSOLE_CATEGORY = "Your State"        # consoles and pact copies; shown at the top
 
 ROLES = {
     # key: (name, colour)
@@ -144,13 +144,17 @@ async def ensure_server(guild: discord.Guild, path: Path, echo=None) -> list[str
             cat = await guild.create_category(name, overwrites=ow, reason="Statecraft setup")
             report.append(f"created category {name}")
         else:
-            await cat.edit(overwrites=ow, reason="Statecraft setup (repair)")
+            await cat.edit(name=name, overwrites=ow, reason="Statecraft setup (repair)")
             report.append(f"found category {name} (permissions reset)")
         data[key] = cat.id
         return cat
 
     category = await ensure_category("category_id", CATEGORY, "readonly")
     consoles = await ensure_category("console_category_id", CONSOLE_CATEGORY, "hidden")
+    try:                                   # "Your State" sits at the top of the channel list
+        await consoles.edit(position=0, reason="Statecraft setup")
+    except discord.HTTPException:
+        pass
 
     # Channels
     channels: dict[str, discord.TextChannel] = {}
@@ -191,7 +195,7 @@ async def ensure_server(guild: discord.Guild, path: Path, echo=None) -> list[str
 
     # Existing consoles and pact copies: make sure players can't use external apps there
     patched = 0
-    for cid in [data.get("console_category_id")] + saved.get("pact_categories", []):
+    for cid in [data.get("console_category_id")] + saved.get("state_categories", []) + saved.get("pact_categories", []):
         cat = guild.get_channel(cid or 0)
         for ch in (cat.channels if cat else []):
             for target, ow in ch.overwrites.items():

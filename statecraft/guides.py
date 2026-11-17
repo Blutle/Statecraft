@@ -116,7 +116,8 @@ def how_to_play(s: dict) -> list[tuple[str, str]]:
     close, fade = _t(s["window_close"]), _t(s["info_expire"])
     return [
         ("👋 How to play on Discord",
-         "Everything happens in your **private console**, a channel only you (and the referee) can see. Nobody "
+         "Everything happens in your **private console**, a channel only you (and the referee) can see, at the "
+         "top of the channel list under **Your State**. Your pact channels appear there too. Nobody "
          "else can tell which console, or which State, is yours.\n\n"
          "This guide covers using the bot. For the game itself, read the rules channel."),
 
@@ -136,8 +137,8 @@ def how_to_play(s: dict) -> list[tuple[str, str]]:
          "• **The status card**: your AP, HP, Influence, position, when your cooldown is ready, whether actions "
          "are open, which States are within your Influence, and which can reach you.\n"
          "• **Recent activity**: Gifts you received, your Spy log link, and other notices.\n"
-         "• **Spying** opens your own private **spy channel** with every Gift made today. New Gifts appear "
-         "there as they happen, and the channel closes when your access ends.\n"
+         "• **Spying** opens a private **🕵️ Spy log** thread in your console with every Gift made today. New "
+         "Gifts appear there as they happen, and the thread closes when your access ends.\n"
          "• **🔄 Refresh** updates it. If it's ever missing, type `/panel`."),
 
         ("🎯 Taking actions",

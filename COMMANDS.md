@@ -90,7 +90,7 @@ Each action is allowed only **2:00–8:00 PM Central** and starts your **15-minu
 | `/attack state:<state>` | 1 AP | Deals 1 damage to a state within your Influence. At 0 HP the state is destroyed, its owner is revealed, and they join the Jury. | #action-log, pings `@Statecraft-Players` |
 | `/upgrade` | 2 AP | Influence +1. Influence is the number of horizontal plus vertical steps, with a diagonal step counting as 2. | #action-log, pings `@Statecraft-Updates` |
 | `/gift state:<state>` | 1 AP | Gives exactly **1 AP** to a State within your Influence (the `gift_amount` setting). To send more, Gift again after your cooldown. The recipient sees it in Recent activity. | **No.** Only the recipient, and anyone Spying, finds out. |
-| `/spy` | 1 AP | **Spy**: opens your own private **spy channel** (`#spy-xxxx` in "Statecraft Spies", visible only to you and the referee). It starts with every Gift made today, and each new Gift is posted there as it happens, with a ping. The channel is deleted when access ends: 8:15 PM, your destruction, or the next day. Spies get separate channels, never a shared one, because a shared channel's member list would show the spies' real names. | Spying is posted in #action-log (pings Updates); the Gift details stay private. |
+| `/spy` | 1 AP | **Spy**: opens a private **🕵️ Spy log** thread in your console (like a conversation thread; only you and the referee can see it). It starts with every Gift made today, and each new Gift is posted there as it happens, with a ping. When access ends (8:15 PM, your destruction, or the next day) the bot removes you from the thread, so it disappears for you; the referee keeps it. Each spy gets their own thread, never a shared channel, because a shared channel's member list would show the spies' real names. | Spying is posted in #action-log (pings Updates); the Gift details stay private. |
 
 ## Info (console only, free, any time, no cooldown)
 
@@ -100,7 +100,7 @@ Each action is allowed only **2:00–8:00 PM Central** and starts your **15-minu
 | `/status state:<state>` | **Another state's** public stats: HP, position, Influence, alive or destroyed (with the owner if destroyed), plus whether it's within your Influence and whether you're within its. **AP and cooldown are hidden.** AP is the one hidden stat. Cooldown stays hidden because gifts are private but still start a cooldown, so showing it would leak when someone gifted. |
 | `/board` | Posts a board image **in your console**. By default it highlights your own Influence and outlines in red every state that can reach you. A **"Show Influence for…" dropdown** under the image redraws the board with any state's Influence highlighted (Influence is public). |
 | `/board state:<state>` | The same board, starting with that state's Influence highlighted. |
-| `/spylog` | Links your spy channel and re-shows today's Spy log as a private reply, if you're spying today. |
+| `/spylog` | Links your Spy log thread and re-shows today's Spy log as a private reply, if you're spying today. |
 | `/help` | The command list and a short rules summary. |
 | `/panel` | Re-posts your control panel (if it's missing or buried). |
 
@@ -237,7 +237,7 @@ A Pillow image is static, and Discord can't do mouse-over on images. So Influenc
 ## Discord requirements this design adds
 
 - **Message Content intent:** enabled (2026-11-17). Pact channels relay plain typed messages, so the bot reads them.
-- **Channel limits:** Discord allows 500 channels per server and 50 per category. Pact copies are spread across "Statecraft Pacts" categories as needed. With 16 players and the membership cap of 6, there are at most 96 pact channels.
+- **Channel limits:** Discord allows 500 channels per server and 50 per category. Consoles and pact copies share the **"Your State"** category at the top of the channel list, so each player sees their console with their own pacts right below it. When a category fills up, the bot adds another "Your State" category; a player's pacts go next to their console when there's room, and each player only sees the categories holding their own channels. With 16 players and the membership cap of 6, there are at most 96 pact channels.
 
 ## Open questions
 
