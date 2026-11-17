@@ -3,23 +3,53 @@
 Pure game logic: no Discord, no console I/O, no clock. Every action returns
 a Result with feedback for the actor and a list of Events for the interface
 (CLI now, Discord later) to deliver. Rejected actions never change state.
+
+Every call to an @recorded method, accepted or rejected, produces one history
+record, sent to `Game.recorder`. That record includes messages and anonymous
+posts with their true author. The history feeds the post-game summary.
 """
 
 from __future__ import annotations
 
+import functools
+import inspect
 import random
+from dataclasses import asdict
+from typing import Callable
 
 from . import geometry
 from .models import Event, GameState, Player, Result
 
 STOPWORDS = {"the", "of", "and", "a", "an", "de", "la", "le", "du", "von", "van"}
 MAX_NAME_LEN = 40
+MAX_MESSAGE_LEN = 1500
+
+
+def recorded(action: str):
+    """Decorator: log every call (args, outcome, events, and the after-state of
+    the players involved) to the game's history recorder."""
+    def deco(fn):
+        sig = inspect.signature(fn)
+
+        @functools.wraps(fn)
+        def wrapper(self: "Game", *args, **kwargs):
+            day_before = self.state.day
+            result = fn(self, *args, **kwargs)
+            bound = sig.bind(self, *args, **kwargs)
+            bound.apply_defaults()
+            params = {k: v for k, v in bound.arguments.items() if k != "self"}
+            self._record(action, params, result, day_before)
+            return result
+        return wrapper
+    return deco
 
 
 class Game:
-    def __init__(self, state: GameState | None = None, rng: random.Random | None = None):
+    def __init__(self, state: GameState | None = None, rng: random.Random | None = None,
+                 recorder: Callable[[dict], None] | None = None):
         self.state = state or GameState()
         self.rng = rng or random.Random()
+        self.recorder = recorder
 
     # ------------------------------------------------------------------ lookup
 
@@ -79,6 +109,7 @@ class Game:
 
     # ------------------------------------------------------------- lifecycle
 
+    @recorded("register")
     def register(self, owner_name: str, state_name: str) -> Result:
         if self.state.phase != "registration":
             return Result.fail("Registration is closed; the game has already started.")
@@ -106,6 +137,7 @@ class Game:
         self.state.players[pid] = player
         return Result(True, f"{owner_name} registered {state_name} [{player.marker}] as {pid}.")
 
+    @recorded("unregister")
     def unregister(self, pid: str) -> Result:
         if self.state.phase != "registration":
             return Result.fail("Players can only be removed during registration.")
@@ -132,6 +164,7 @@ class Game:
                 return c
         raise RuntimeError("Ran out of markers")
 
+    @recorded("start")
     def start(self) -> Result:
         if self.state.phase != "registration":
             return Result.fail("The game has already started.")
@@ -139,8 +172,11 @@ class Game:
         if len(players) < 2:
             return Result.fail("At least 2 players are needed to start.")
         n = len(players)
-        self.state.board_size = n
-        squares = [(x, y) for x in range(n) for y in range(n)]
+        size = self.s.get("board_size") or n
+        if size * size < n * 2:
+            return Result.fail(f"A {size}x{size} board is too small for {n} states.")
+        self.state.board_size = size
+        squares = [(x, y) for x in range(size) for y in range(size)]
         for p, (x, y) in zip(players, self.rng.sample(squares, n)):
             p.x, p.y = x, y
             p.hp = self.s["starting_hp"]
@@ -150,7 +186,7 @@ class Game:
         roster = ", ".join(f"{p.state_name} [{p.marker}] at {self.pos(p)}" for p in players)
         return self._done(Result(True, "Game started.", [Event(
             "GAME_START",
-            public=f"Statecraft begins on a {n}x{n} board with {n} states: {roster}. "
+            public=f"Statecraft begins on a {size}x{size} board with {n} states: {roster}. "
                    f"All states start with 0 AP; the first AP arrives at the start of Day 1.",
             ping="mandatory",
         )]))
@@ -182,6 +218,7 @@ class Game:
                           f"(distance {geometry.distance(actor.x, actor.y, t.x, t.y)}, your range {self.range_of(actor)}).")
         return t, ""
 
+    @recorded("move")
     def move(self, pid: str, direction: str) -> Result:
         cost = self.s["move_cost"]
         p, err = self._actor(pid, cost)
@@ -203,6 +240,7 @@ class Game:
         return self._done(Result(True, f"Moved to {self.pos(p)}. AP left: {p.ap}.", [Event(
             "MOVE", public=f"{p.state_name} moved from {old} to {self.pos(p)}.", ping="opt_in")]))
 
+    @recorded("attack")
     def attack(self, pid: str, tid: str) -> Result:
         cost = self.s["attack_cost"]
         p, err = self._actor(pid, cost)
@@ -224,6 +262,8 @@ class Game:
             t.hp = 0
             t.alive = False
             t.eliminated_on_day = self.state.day
+            if t.id in self.state.info_access:      # death ends purchased info access
+                self.state.info_access.remove(t.id)
             events.append(Event(
                 "ELIMINATION",
                 public=(f"{p.state_name} attacked {t.state_name}, destroying it! "
@@ -239,6 +279,7 @@ class Game:
         if len(alive) != 1:
             return []
         w = alive[0]
+        self._archive_votes(tallied=False)          # ballots cast but never tallied
         self.state.phase = "ended"
         self.state.winner = w.id
         return [Event(
@@ -248,6 +289,7 @@ class Game:
             ping="mandatory",
         )]
 
+    @recorded("upgrade")
     def upgrade(self, pid: str) -> Result:
         cost = self.s["upgrade_cost"]
         p, err = self._actor(pid, cost)
@@ -259,6 +301,7 @@ class Game:
         return self._done(Result(True, f"Range is now {r}. AP left: {p.ap}.", [Event(
             "UPGRADE", public=f"{p.state_name} increased its range to {r}.", ping="opt_in")]))
 
+    @recorded("transfer")
     def transfer(self, pid: str, tid: str, amount: int) -> Result:
         if amount < 1:
             return Result.fail("You must transfer at least 1 AP.")
@@ -279,6 +322,7 @@ class Game:
         return self._done(Result(True, f"Sent {amount} AP to {t.state_name}. AP left: {p.ap}.",
                                  [Event("TRANSFER", private=private)]))
 
+    @recorded("buy_info")
     def buy_info(self, pid: str) -> Result:
         cost = self.s["info_cost"]
         p, err = self._actor(pid, cost)
@@ -303,6 +347,7 @@ class Game:
             lines.append(f"  {self.get(tr['from']).state_name} -> {self.get(tr['to']).state_name}: {tr['amount']} AP")
         return "\n".join(lines)
 
+    @recorded("vote")
     def vote(self, pid: str, tid: str) -> Result:
         if self.state.phase != "active":
             return Result.fail("The game is not in progress.")
@@ -321,6 +366,7 @@ class Game:
 
     # ------------------------------------------------------------- day cycle
 
+    @recorded("next_day")
     def next_day(self) -> Result:
         """Close the current day and open the next one.
 
@@ -345,7 +391,7 @@ class Game:
                 t.ap += bonus
                 parts.append(f"{t.state_name}: {n} vote{'s' if n != 1 else ''} (+{bonus} AP)")
             events.append(Event("JURY_RESULT", public="Jury results: " + ("; ".join(parts) or "no valid votes") + "."))
-            self.state.jury_votes = {}
+            self._archive_votes(tallied=True)
 
         self.state.info_access = []
         self.state.transfers_today = []
@@ -358,8 +404,38 @@ class Game:
         ))
         return self._done(Result(True, f"Advanced to Day {self.state.day}.", events))
 
+    def _archive_votes(self, tallied: bool) -> None:
+        """Move current ballots into the private (admin-only) vote history."""
+        for juror, target in self.state.jury_votes.items():
+            self.state.jury_history.append(
+                {"day": self.state.day, "juror": juror, "target": target, "tallied": tallied})
+        self.state.jury_votes = {}
+
+    def jury_scores(self) -> list[dict]:
+        """Admin-only juror ranking for prizes: how often each juror backed the
+        eventual winner. A juror eliminated on day d can vote on nights
+        d .. final_day-1 (each tallied the next afternoon); only tallied
+        ballots count."""
+        if self.state.phase != "ended":
+            return []
+        final_day = self.state.day
+        rows = []
+        for p in self.state.players.values():
+            if p.alive:
+                continue
+            ballots = [b for b in self.state.jury_history if b["juror"] == p.id and b["tallied"]]
+            for_winner = sum(1 for b in ballots if b["target"] == self.state.winner)
+            nights = final_day - p.eliminated_on_day
+            rows.append({
+                "player": p, "for_winner": for_winner, "ballots": len(ballots), "nights": nights,
+                "rate": for_winner / nights if nights else 0.0,
+            })
+        rows.sort(key=lambda r: (-r["for_winner"], -r["rate"]))
+        return rows
+
     # ------------------------------------------------------------------ admin
 
+    @recorded("admin_give_ap")
     def give_ap(self, pid: str, amount: int) -> Result:
         p = self.get(pid)
         if not p:
@@ -368,6 +444,95 @@ class Game:
             return Result.fail(f"{p.state_name} only has {p.ap} AP.")
         p.ap += amount
         return self._done(Result(True, f"[Admin] {p.state_name} now has {p.ap} AP."))
+
+    # -------------------------------------------------------------- messaging
+    # Relays only: no AP, no cooldown, no game-state change. Their true author
+    # is always written to the history, even for anonymous posts.
+
+    def _message_text(self, text: str) -> tuple[str, str]:
+        text = text.strip()
+        if not text:
+            return "", "Message is empty."
+        if len(text) > MAX_MESSAGE_LEN:
+            return "", f"Messages are limited to {MAX_MESSAGE_LEN} characters."
+        return text, ""
+
+    @recorded("say")
+    def say(self, pid: str, text: str) -> Result:
+        """Public diplomacy, posted under the state's name."""
+        p = self.get(pid)
+        if not p:
+            return Result.fail("You are not a player in this game.")
+        if self.state.phase != "active" or not p.alive:
+            return Result.fail("Only living states in an active game can post diplomacy.")
+        text, err = self._message_text(text)
+        if err:
+            return Result.fail(err)
+        return Result(True, "Posted to #diplomacy.", [Event("DIPLOMACY", public=f"{p.state_name}: {text}")])
+
+    @recorded("dm")
+    def dm(self, pid: str, tid: str, text: str) -> Result:
+        """Private state-to-state message, relayed to the recipient's console."""
+        p, t = self.get(pid), self.get(tid)
+        if not p:
+            return Result.fail("You are not a player in this game.")
+        if self.state.phase != "active" or not p.alive:
+            return Result.fail("Only living states in an active game can send private diplomacy.")
+        if not t or not t.alive:
+            return Result.fail("You can only message a surviving state.")
+        if t.id == p.id:
+            return Result.fail("You can't message yourself.")
+        text, err = self._message_text(text)
+        if err:
+            return Result.fail(err)
+        return Result(True, f"Message delivered to {t.state_name}.", [Event(
+            "PRIVATE_MESSAGE", private={t.id: f"Message from {p.state_name}: {text}"})])
+
+    @recorded("anon")
+    def anon(self, pid: str, text: str) -> Result:
+        """Anonymous post. Publicly unattributed; the author is still logged."""
+        if not self.get(pid):
+            return Result.fail("You are not a player in this game.")
+        text, err = self._message_text(text)
+        if err:
+            return Result.fail(err)
+        return Result(True, "Posted anonymously to #anonymous-chat.",
+                      [Event("ANONYMOUS", public=f"Anonymous: {text}")])
+
+    # ---------------------------------------------------------------- history
+
+    def who(self, pid: str | None) -> dict | None:
+        """A player's identity plus their current stats, for history records."""
+        p = self.get(pid) if pid else None
+        if not p:
+            return None
+        return {
+            "id": p.id, "state": p.state_name, "owner": p.owner_name, "marker": p.marker,
+            "pos": self.pos(p), "hp": p.hp, "ap": p.ap, "range": self.range_of(p), "alive": p.alive,
+        }
+
+    def snapshot(self) -> list[dict]:
+        return [self.who(pid) for pid in self.state.players]
+
+    def _record(self, action: str, params: dict, result: Result, day_before: int) -> None:
+        if not self.recorder:
+            return
+        rec = {
+            "day": day_before,
+            "phase": self.state.phase,
+            "action": action,
+            "ok": result.ok,
+            "actor": self.who(params.pop("pid", None)),
+            "target": self.who(params.pop("tid", None)),
+            "args": params,
+            "result": result.message,
+            "events": [asdict(e) for e in result.events],
+        }
+        if action in ("start", "next_day") or self.state.phase == "ended":
+            rec["snapshot"] = self.snapshot()
+        if action == "next_day" and result.ok:
+            rec["new_day"] = self.state.day
+        self.recorder(rec)
 
     # ---------------------------------------------------------------- helpers
 

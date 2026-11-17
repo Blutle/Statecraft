@@ -155,7 +155,15 @@ class ActionTests(unittest.TestCase):
         # Later transfers are forwarded to the buyer
         res = self.g.transfer("p2", "p1", 1)
         self.assertIn("p4", res.events[0].private)
+        # Death ends access immediately
+        self.g.get("p4").hp = 1
+        place(self.g, "p4", 0, 1)
+        self.assertTrue(self.g.attack("p1", "p4").ok)
+        self.assertNotIn("p4", self.g.state.info_access)
+        res = self.g.transfer("p2", "p1", 1)
+        self.assertNotIn("p4", res.events[0].private)
         # Access ends with the day
+        self.g.buy_info("p3")
         self.g.next_day()
         self.assertEqual(self.g.state.info_access, [])
         self.assertEqual(self.g.state.transfers_today, [])
@@ -183,6 +191,66 @@ class DayAndJuryTests(unittest.TestCase):
         self.assertEqual(g.get("p2").ap, 2)                  # 3 votes -> +1, plus daily
         self.assertEqual(g.get("p1").ap, 1)
         self.assertEqual(g.state.jury_votes, {})
+
+
+class JuryScoreTests(unittest.TestCase):
+    def test_scores_rank_votes_for_winner(self):
+        g = make_game(4)
+        place(g, "p1", 0, 0); place(g, "p2", 1, 0); place(g, "p3", 2, 0); place(g, "p4", 3, 3)
+        g.get("p1").ap = 20
+        g.state.day = 1
+        for _ in range(3):
+            g.attack("p1", "p2")                     # p2 dies day 1
+        g.vote("p2", "p1")
+        g.next_day()                                 # night 1 tallied -> day 2
+        for _ in range(3):
+            g.attack("p1", "p3")                     # p3 dies day 2
+        g.vote("p2", "p4")
+        g.vote("p3", "p1")
+        g.next_day()                                 # night 2 tallied -> day 3
+        g.vote("p2", "p1")                           # cast but never tallied
+        g.get("p4").hp = 1
+        place(g, "p4", 0, 1)
+        g.attack("p1", "p4")                         # p1 wins on day 3
+        self.assertEqual(g.state.winner, "p1")
+        rows = {r["player"].id: r for r in g.jury_scores()}
+        self.assertEqual((rows["p2"]["for_winner"], rows["p2"]["nights"]), (1, 2))
+        self.assertEqual((rows["p3"]["for_winner"], rows["p3"]["nights"]), (1, 1))
+        self.assertEqual(rows["p4"]["nights"], 0)
+        self.assertEqual(g.jury_scores()[0]["player"].id, "p3")   # tie on votes, better rate
+        self.assertEqual(len(g.state.jury_history), 4)
+
+
+class HistoryTests(unittest.TestCase):
+    def test_every_call_recorded_including_rejections_and_anon_author(self):
+        records = []
+        g = Game(rng=random.Random(1), recorder=records.append)
+        g.register("greg", "Westhaven")
+        g.register("sam", "Kesh")
+        g.start()
+        g.move("p1", "n")                            # rejected: 0 AP
+        g.anon("p2", "trust no one")
+        g.dm("p1", "p2", "ally?")
+        g.say("p2", "Kesh is peaceful")
+        self.assertEqual([r["action"] for r in records],
+                         ["register", "register", "start", "move", "anon", "dm", "say"])
+        self.assertFalse(records[3]["ok"])
+        self.assertIn("snapshot", records[2])
+        anon = records[4]
+        self.assertEqual(anon["actor"]["owner"], "sam")            # true author kept
+        self.assertEqual(anon["args"]["text"], "trust no one")
+        self.assertNotIn("Kesh", anon["events"][0]["public"])     # but not shown publicly
+        self.assertEqual(records[5]["target"]["state"], "Kesh")
+
+    def test_history_file_appends_with_sequence(self):
+        with tempfile.TemporaryDirectory() as d:
+            h = store.History(store.history_path(Path(d) / "game.json"))
+            h.append({"action": "a"})
+            h.append({"action": "b"})
+            h2 = store.History(h.path)                # reopen continues numbering
+            h2.append({"action": "c"})
+            self.assertEqual([r["seq"] for r in h2.tail(10)], [1, 2, 3])
+            self.assertTrue(h.path.name.endswith(".history.jsonl"))
 
 
 class StoreTests(unittest.TestCase):

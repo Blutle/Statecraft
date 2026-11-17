@@ -7,6 +7,7 @@ __pycache__/
 game.json
 game.json.tmp
 game.json.bak
+*.history*.jsonl
 board.png
 
 # Secrets (Discord token, later)

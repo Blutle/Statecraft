@@ -272,6 +272,16 @@ statecraft/
 
 ---
 
+## 4b. Complete History Log (requirement)
+
+Everything is recorded for an agent to write a post-game summary (achievements, titles, alliance and betrayal storylines). Players will be told that nothing they send to the bot is private from the post-game record.
+
+- Every `@recorded` engine call writes one line to `game.history.jsonl`. That covers each action (accepted **or rejected**), each message (`say`, `dm`, `anon`, with the true author), each jury ballot, each day tick, and each admin change.
+- Each record holds the actor and the target. Both carry identity plus after-state: position, HP, AP, range, and alive. Each record also holds the arguments, the outcome, and every public and private event.
+- `start`, `next_day`, and game-end records include a full snapshot of every player.
+- `jury_history` in `game.json` keeps tallied ballots for juror prize scoring (`juryscore`).
+- **Discord rule:** every player interaction must go through an engine method so it gets logged. Never relay anything straight from the bot.
+
 ## 5. Identity-Masking Checklist
 
 These are the ways a living state's owner could be exposed. Each one needs to be handled.

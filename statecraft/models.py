@@ -15,6 +15,7 @@ DEFAULT_SETTINGS = {
     "info_cost": 1,
     "daily_ap": 1,
     "votes_per_ap": 3,
+    "board_size": 0,             # 0 = automatic (N x N for N players)
 }
 
 
@@ -42,6 +43,7 @@ class GameState:
     settings: dict = field(default_factory=lambda: dict(DEFAULT_SETTINGS))
     players: dict[str, Player] = field(default_factory=dict)
     jury_votes: dict[str, str] = field(default_factory=dict)  # juror id -> target id
+    jury_history: list[dict] = field(default_factory=list)    # past ballots (admin-only)
     info_access: list[str] = field(default_factory=list)      # ids with access today
     transfers_today: list[dict] = field(default_factory=list)
     log: list[dict] = field(default_factory=list)              # public event history

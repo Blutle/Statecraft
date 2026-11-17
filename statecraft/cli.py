@@ -42,9 +42,16 @@ ACTIONS (current player)
   buyinfo                       See today's AP transfers            (1 AP)
   vote <state>                  Jury only: vote for a surviving state
 
+MESSAGES (free, logged in full, including anonymous posts' real author)
+  say <message>                 Public diplomacy, posted under your state's name
+  dm <state> <message>          Private message to another state (quote multi-word names)
+  anon <message>                Anonymous public post
+
 TIME / ADMIN
   nextday                       End the day: jury tally, then +1 AP to survivors
   give <player> <amount>        Admin: add (or remove, if negative) AP
+  juryscore                     Admin: after the game, rank jurors by votes for the winner
+  history [n]                   Admin: last n records of the full history log (default 10)
   help                          This text
   quit                          Exit (the game is saved after every change)
 
@@ -55,13 +62,15 @@ A state can be named by its marker (e.g. RA), its name, or the start of its name
 class CLI:
     def __init__(self, path: Path, seed: int | None = None):
         self.path = path
+        self.history = store.History(store.history_path(path))
         state = store.load(path)
-        self.game = Game(state, rng=random.Random(seed))
+        self.game = Game(state, rng=random.Random(seed), recorder=self.history.append)
         self.current: str | None = None
         if state:
             print(f"Loaded {path} (phase: {state.phase}, day {state.day}, {len(state.players)} players).")
         else:
             print(f"Starting a new game. It will be saved to {path}.")
+        print(f"Full history is logged to {self.history.path}.")
 
     # --------------------------------------------------------------- output
 
@@ -154,10 +163,11 @@ class CLI:
         if a != ["yes"]:
             print("This deletes the whole game. Type 'reset yes' to confirm.")
             return
-        self.game = Game(GameState(), rng=self.game.rng)
+        archived = self.history.archive()
+        self.game = Game(GameState(), rng=self.game.rng, recorder=self.history.append)
         self.current = None
         store.save(self.game.state, self.path)
-        print("Game reset.")
+        print("Game reset." + (f" The old history was saved as {archived}." if archived else ""))
 
     def cmd_as(self, a):
         if not a:
@@ -257,6 +267,50 @@ class CLI:
 
     def cmd_nextday(self, a):
         self.show(self.game.next_day())
+
+    def cmd_say(self, a):
+        pid = self._me()
+        if pid:
+            self.show(self.game.say(pid, " ".join(a)))
+
+    def cmd_dm(self, a):
+        pid = self._me()
+        if not pid:
+            return
+        if len(a) < 2:
+            print('Usage: dm <state> <message>   (quote multi-word names: dm "veyran empire" hello)')
+            return
+        t = self._find(a[0])
+        if t:
+            self.show(self.game.dm(pid, t.id, " ".join(a[1:])))
+
+    def cmd_anon(self, a):
+        pid = self._me()
+        if pid:
+            self.show(self.game.anon(pid, " ".join(a)))
+
+    def cmd_history(self, a):
+        n = int(a[0]) if a and a[0].isdigit() else 10
+        for r in self.history.tail(n):
+            actor = r["actor"]["state"] if r.get("actor") else "-"
+            target = f" -> {r['target']['state']}" if r.get("target") else ""
+            args = {k: v for k, v in r["args"].items()}
+            status = "ok" if r["ok"] else "REJECTED"
+            print(f"  #{r['seq']:<4} day {r['day']:<3} {r['action']:<14} {status:<8} {actor}{target} "
+                  f"{args if args else ''}  {r['result'][:60]}")
+
+    def cmd_juryscore(self, a):
+        rows = self.game.jury_scores()
+        if not rows:
+            print("Jury scores are available once the game has ended.")
+            return
+        winner = self.game.get(self.game.state.winner)
+        print(f"[Admin only] Votes for the winner, {winner.state_name}:")
+        print(f"  {'Player':<14} {'State':<{render_text._w(self.game)}} {'For winner':>10} {'Ballots':>8} {'Nights':>7} {'Rate':>6}")
+        for r in rows:
+            p = r["player"]
+            print(f"  {p.owner_name:<14} {p.state_name:<{render_text._w(self.game)}} {r['for_winner']:>10} "
+                  f"{r['ballots']:>8} {r['nights']:>7} {r['rate']:>6.0%}")
 
     def cmd_give(self, a):
         if len(a) < 2 or not a[-1].lstrip("-").isdigit():
