@@ -416,9 +416,10 @@ class Game:
             "UPGRADE", data={"pid": p.id, "range": r}, public=f"{p.state_name} increased its Influence to {r}.", ping="opt_in")]))
 
     @recorded("gift")
-    def gift(self, pid: str, tid: str, amount: int, *, now: datetime | None = None) -> Result:
-        if amount < 1:
-            return Result.fail("You must gift at least 1 AP.")
+    def gift(self, pid: str, tid: str, *, now: datetime | None = None) -> Result:
+        """Give exactly gift_amount (1) AP to a State within your Influence.
+        A normal action: the giver pays the AP, and the cooldown applies."""
+        amount = self.s["gift_amount"]
         p, err = self._actor(pid, amount, now)
         if err:
             return Result.fail(err)

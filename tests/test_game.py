@@ -244,28 +244,30 @@ class ActionTests(unittest.TestCase):
         self.assertTrue(self.g.attack("p1", "p3").ok)
 
     def test_gift(self):
-        self.assertTrue(self.g.gift("p1", "p2", 3).ok)
-        self.assertEqual(self.g.get("p1").ap, 2)
-        self.assertEqual(self.g.get("p2").ap, 8)
-        self.assertFalse(self.g.gift("p1", "p2", 3).ok)  # not enough
-        self.assertFalse(self.g.gift("p1", "p3", 1).ok)  # out of range
-        self.assertFalse(self.g.gift("p1", "p1", 1).ok)
+        self.assertTrue(self.g.gift("p1", "p2").ok)                 # always exactly 1 AP
+        self.assertEqual(self.g.get("p1").ap, 4)
+        self.assertEqual(self.g.get("p2").ap, 6)
+        self.g.get("p1").ap = 0
+        self.assertFalse(self.g.gift("p1", "p2").ok)                # not enough AP
+        self.g.get("p1").ap = 5
+        self.assertFalse(self.g.gift("p1", "p3").ok)                # outside Influence
+        self.assertFalse(self.g.gift("p1", "p1").ok)
 
     def test_info_purchase_sees_gifts(self):
-        self.g.gift("p1", "p2", 1)
+        self.g.gift("p1", "p2")
         res = self.g.buy_info("p4")
         self.assertTrue(res.ok)
         self.assertIn("Republic of Aldren gifted Veyran Empire 1 AP", res.message)
         self.assertFalse(self.g.buy_info("p4").ok)           # once per day
         # Later gifts are forwarded to the buyer
-        res = self.g.gift("p2", "p1", 1)
+        res = self.g.gift("p2", "p1")
         self.assertIn("p4", res.events[0].private)
         # Death ends access immediately
         self.g.get("p4").hp = 1
         place(self.g, "p4", 0, 1)
         self.assertTrue(self.g.attack("p1", "p4").ok)
         self.assertNotIn("p4", self.g.state.info_access)
-        res = self.g.gift("p2", "p1", 1)
+        res = self.g.gift("p2", "p1")
         self.assertNotIn("p4", res.events[0].private)
         # Access ends with the day
         self.g.buy_info("p3")

@@ -360,7 +360,7 @@ class PanelSelect(discord.ui.DynamicItem[discord.ui.Select], template=r"panel:ac
 ACTIONS_ALIVE = [
     discord.SelectOption(label="Move", value="move", emoji="🧭", description="1 AP · one square"),
     discord.SelectOption(label="Attack", value="attack", emoji="⚔️", description="1 AP · 1 damage to a State within your Influence"),
-    discord.SelectOption(label="Gift", value="gift", emoji="🎁", description="Give AP to a State within your Influence (private)"),
+    discord.SelectOption(label="Gift", value="gift", emoji="🎁", description="1 AP · give it to a State within your Influence (private)"),
     discord.SelectOption(label="Upgrade Influence", value="upgrade", emoji="📡", description="2 AP · Influence +1"),
     discord.SelectOption(label="Spy", value="buyinfo", emoji="🕵️",
                          description="1 AP · see today's top-secret Gift log until 8:15 PM"),
@@ -434,11 +434,10 @@ class TargetView(discord.ui.View):
                                        + ui.ap_note(pid, g.s["attack_cost"]),
                                     lambda g, now: g.attack(pid, tid, now=now), edit=True)
         elif self.kind == "gift":
-            if g.get(pid).ap < 1:   # let the engine reject (and log) it
-                await ui.confirm_action(i, "", lambda g, now: g.gift(pid, tid, 1, now=now), edit=True)
-                return
-            await i.response.edit_message(content=f"How much AP to gift **{t.state_name}**? (You have "
-                                                  f"{g.get(pid).ap}.)", view=AmountView(ui, pid, tid))
+            n = g.s["gift_amount"]
+            await ui.confirm_action(i, f"Gift **{n} AP** to **{t.state_name}** [{t.marker}]? Gifts are private. "
+                                       + ui.ap_note(pid, n),
+                                    lambda g, now: g.gift(pid, tid, now=now), edit=True)
         elif self.kind == "vote":
             await ui.reply(i, await ui.svc.run(lambda g, now: g.vote(pid, tid, now=now)), edit=True)
         elif self.kind == "dm":
@@ -447,23 +446,6 @@ class TargetView(discord.ui.View):
             text = (f"Your conversation with **{t.state_name}**: {thread.mention}. Type there; it's relayed to them "
                     "under your state name.") if thread else f"Couldn't open a conversation with {t.state_name}."
             await i.edit_original_response(content=text, view=None)
-
-
-class AmountView(discord.ui.View):
-    def __init__(self, ui: "UI", pid: str, tid: str):
-        super().__init__(timeout=120)
-        ap = ui.svc.game.get(pid).ap
-        options = [discord.SelectOption(label=f"{n} AP", value=str(n)) for n in range(1, min(ap, 25) + 1)]
-        select = discord.ui.Select(placeholder="Amount…", options=options)
-
-        async def picked(i: discord.Interaction):
-            n = int(select.values[0])
-            t = ui.svc.game.get(tid)
-            await ui.confirm_action(i, f"Gift **{n} AP** to **{t.state_name}** [{t.marker}]? " + ui.ap_note(pid, n),
-                                    lambda g, now: g.gift(pid, tid, n, now=now), edit=True)
-
-        select.callback = picked
-        self.add_item(select)
 
 
 # ---------------------------------------------------------------- UI helper

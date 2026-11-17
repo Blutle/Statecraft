@@ -174,9 +174,10 @@ class Sim:
             if choice == 1:
                 return self.call("attack-self", g.attack(p.id, p.id), False, before)
             if choice == 2:
-                return self.call("gift-too-much", g.gift(p.id, (in_range or enemies)[0].id, p.ap + 1), False, before)
+                return self.call("gift-to-self", g.gift(p.id, p.id), False, before)
             if choice == 3:
-                return self.call("gift-zero", g.gift(p.id, enemies[0].id, 0), False, before)
+                return self.call("gift-out-of-range", g.gift(p.id, out_range[0].id), False, before) \
+                    if out_range else None
             if choice == 4:
                 return self.call("vote-while-alive", g.vote(p.id, enemies[0].id), False, before)
             if choice == 5:
@@ -210,10 +211,10 @@ class Sim:
             return res
         if in_range and roll < 0.68:
             t = self.rng.choice(in_range)
-            amt = self.rng.randint(1, max(1, p.ap))
             sender_before, recv_before = p.ap, t.ap
             buyers = set(g.state.info_access) - {p.id, t.id}
-            res = self.call("gift", g.gift(p.id, t.id, amt), None, before)
+            amt = g.s["gift_amount"]
+            res = self.call("gift", g.gift(p.id, t.id), None, before)
             if res.ok:
                 if p.ap != sender_before - amt or t.ap != recv_before + amt:
                     self.fail("gift amounts wrong")
@@ -424,7 +425,8 @@ class Sim:
             cur = donor_id
             while cur != hitter.id:
                 nxt = parent[cur]
-                self.act("chain-gift", g.gift(cur, nxt, amount), self.snapshot())
+                for _ in range(amount):                 # one Gift moves one AP
+                    self.act("chain-gift", g.gift(cur, nxt), self.snapshot())
                 cur = nxt
                 hops += 1
             self.stats["~chain_hops"] += hops

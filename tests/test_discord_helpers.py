@@ -27,7 +27,7 @@ class RunTextTests(unittest.TestCase):
         g = game()
         self.assertTrue(run_text(g, "fake1", "attack VE", WINDOW).ok)
         self.assertEqual(g.get("fake2").hp, 2)
-        self.assertTrue(run_text(g, "fake2", "gift WE 2", WINDOW).ok)
+        self.assertTrue(run_text(g, "fake2", "gift WE", WINDOW).ok)
         self.assertTrue(run_text(g, "fake3", "say hello all", WINDOW).ok)
         self.assertTrue(run_text(g, "fake3", "dm WE secret plan", WINDOW).ok)
         self.assertFalse(run_text(g, "fake1", "move ne", WINDOW).ok)      # cooldown from the attack

@@ -637,18 +637,19 @@ def register_commands(bot: StatecraftBot) -> None:
                                        + ui.ap_note(pid, svc.game.s["upgrade_cost"]),
                                     lambda g, now: g.upgrade(pid, now=now))
 
-    @tree.command(description="Gift AP to a State within your Influence (private)")
+    @tree.command(description="Gift 1 AP to a State within your Influence (private)")
     @app_commands.autocomplete(state=alive_states)
-    async def gift(i: discord.Interaction, state: str, amount: app_commands.Range[int, 1, 999]):
+    async def gift(i: discord.Interaction, state: str):
         if pid := await ui.console_pid(i):
             tid, err = ui.resolve(state)
             if not tid:
                 await ui.reply(i, Result.fail(err))
                 return
             t = svc.game.get(tid)
-            await ui.confirm_action(i, f"Gift **{amount} AP** to **{t.state_name}** [{t.marker}]? "
-                                       + ui.ap_note(pid, amount),
-                                    lambda g, now: g.gift(pid, tid, amount, now=now))
+            n = svc.game.s["gift_amount"]
+            await ui.confirm_action(i, f"Gift **{n} AP** to **{t.state_name}** [{t.marker}]? Gifts are private. "
+                                       + ui.ap_note(pid, n),
+                                    lambda g, now: g.gift(pid, tid, now=now))
 
     @tree.command(description="Spy: see the top-secret log of today's Gifts until 8:15 PM (1 AP)")
     async def spy(i: discord.Interaction):

@@ -20,7 +20,7 @@ NO_PINGS = discord.AllowedMentions.none()
 HELP = """**Statecraft**: use the **control panel** at the bottom of your console. Conversations with other states open as private threads (✉️ Message a state). Every slash command below also works as a backup.
 **Before the game**: `/name` sets or changes your state's name · `/leave` withdraws
 **Actions** (2:00-8:00 PM Central, 15-minute cooldown after each, always confirmed first):
-Move 1 AP · Attack 1 AP · Upgrade Influence 2 AP (+1) · Gift (give AP to a State within your Influence) · Spy 1 AP (today's Gift log until 8:15 PM)
+Move 1 AP · Attack 1 AP · Upgrade Influence 2 AP (+1) · Gift 1 AP (give it to a State within your Influence) · Spy 1 AP (today's Gift log until 8:15 PM)
 **Info** (free, any time): `/status` (you, or any State) · `/board` · `/spylog` · `/help` · `/panel` (re-post your panel)
 **Talk** (free, any time, works after elimination too): `/say` (#public-chat, under your state name) · `/dm` (another state's console) · `/anon` (#anonymous-chat, no name)
 **Jury** (after elimination): `/vote` 8:00 PM-1:45 PM, secret, changeable until the lock
@@ -277,9 +277,9 @@ def run_text(game: Game, pid: str, text: str, now: datetime) -> Result:
             if not tid:
                 return Result.fail(err)
             return (game.attack if verb == "attack" else game.vote)(pid, tid, now=now)
-        if verb == "gift" and len(args) >= 2 and args[-1].isdigit():
-            tid, err = target(" ".join(args[:-1]))
-            return game.gift(pid, tid, int(args[-1]), now=now) if tid else Result.fail(err)
+        if verb == "gift" and args:
+            tid, err = target(" ".join(args))
+            return game.gift(pid, tid, now=now) if tid else Result.fail(err)
         if verb in ("say", "anon") and args:
             return (game.say if verb == "say" else game.anon)(pid, " ".join(args))
         if verb == "dm" and len(args) >= 2:

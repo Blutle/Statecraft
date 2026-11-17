@@ -84,9 +84,9 @@ class ClockedActionTests(unittest.TestCase):
 
     def test_rejected_action_does_not_start_cooldown(self):
         self.assertFalse(self.g.attack("p1", "p1", now=ct(2026, 11, 17, 15, 0)).ok)
-        self.assertFalse(self.g.gift("p1", "p2", 99, now=ct(2026, 11, 17, 15, 0)).ok)
+        self.assertFalse(self.g.gift("p1", "p1", now=ct(2026, 11, 17, 15, 0)).ok)
         self.assertIsNone(self.g.get("p1").last_action)
-        self.assertTrue(self.g.gift("p1", "p2", 1, now=ct(2026, 11, 17, 15, 1)).ok)
+        self.assertTrue(self.g.gift("p1", "p2", now=ct(2026, 11, 17, 15, 1)).ok)
 
     def test_buy_info_triggers_cooldown_and_shows_fade_time(self):
         r = self.g.buy_info("p1", now=ct(2026, 11, 17, 19, 50))

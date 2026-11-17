@@ -40,7 +40,7 @@ ACTIONS (current player)
   move <dir>                    n, ne, e, se, s, sw, w, nw          (1 AP)
   attack <state>                Deal 1 damage within your Influence (1 AP)
   upgrade                       Influence +1                        (2 AP)
-  gift <state> <amount>         Give AP within your Influence       (amount)
+  gift <state>                  Give 1 AP within your Influence     (1 AP)
   spy                           See today's Gift log                (1 AP)
   vote <state>                  Jury only: vote for a surviving state
 
@@ -251,11 +251,11 @@ class CLI:
         if not pid:
             return
         if len(a) < 2 or not a[-1].lstrip("-").isdigit():
-            print("Usage: gift <state> <amount>")
+            print("Usage: gift <state>")
             return
         t = self._find(" ".join(a[:-1]))
         if t:
-            self.show(self.game.gift(pid, t.id, int(a[-1])))
+            self.show(self.game.gift(pid, t.id))
 
     def cmd_spy(self, a):
         pid = self._me()

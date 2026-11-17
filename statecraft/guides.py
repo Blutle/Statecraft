@@ -49,7 +49,7 @@ def rules(s: dict) -> list[tuple[str, str]]:
          "onto another State, living or destroyed.\n"
          f"**Attack**: {s['attack_cost']} AP. Deal 1 damage to a State within your Influence.\n"
          f"**Upgrade Influence**: {s['upgrade_cost']} AP. Your Influence grows by 1, permanently.\n"
-         "**Gift**: any amount of AP. Give AP to a State within your Influence.\n"
+         f"**Gift**: {s['gift_amount']} AP. Give {s['gift_amount']} AP to a State within your Influence.\n"
          f"**Spy**: {s['info_cost']} AP. Gain access to a top-secret log that shows all gift actions performed "
          "for the current day."),
 

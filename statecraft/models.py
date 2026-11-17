@@ -13,6 +13,7 @@ DEFAULT_SETTINGS = {
     "attack_cost": 1,
     "upgrade_cost": 2,
     "info_cost": 1,
+    "gift_amount": 1,            # AP moved by one Gift (paid by the giver)
     "daily_ap": 1,
     "votes_per_ap": 3,
     "board_size": 0,             # 0 = automatic, using board_scale_pct
