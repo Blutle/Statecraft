@@ -142,5 +142,23 @@ class DurationTests(unittest.TestCase):
         self.assertIsNone(parse_duration("soon"))
 
 
+class GuideCardDiffTests(unittest.TestCase):
+    """/admin guides only edits cards whose content changed (avoids rate limits)."""
+
+    def test_unchanged_cards_are_skipped(self):
+        import discord
+        from types import SimpleNamespace
+        from statecraft.discord_bot import _same_card
+        card = discord.Embed(title="Influence", description="Body", colour=0x1ABC9C)
+        card.set_image(url="attachment://influence.png")
+        card.set_footer(text="Every State starts with 2 Influence Range")
+        # Once posted, Discord rewrites the image URL to its CDN
+        live = discord.Embed.from_dict({**card.to_dict(), "image": {"url": "https://cdn.example/influence.png"}})
+        self.assertTrue(_same_card(SimpleNamespace(embeds=[live]), card))
+        edited = card.copy()
+        edited.description = "New body"
+        self.assertFalse(_same_card(SimpleNamespace(embeds=[live]), edited))
+
+
 if __name__ == "__main__":
     unittest.main()

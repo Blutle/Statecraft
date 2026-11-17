@@ -38,6 +38,16 @@ BOARD_CHANGING = {"GAME_START", "MOVE", "ATTACK", "ELIMINATION", "UPGRADE", "DAI
                   "JURY_RESULT", "GAME_OVER", "ADMIN_EDIT", "REVIVED"}
 PICTURES = {"influence": lambda: render_image.influence_png()}   # illustrations used by the guides
 KEEP_ON_FRESH = {"admin_log", "rules", "how_to_play"}   # fresh_channels never wipes these
+
+
+def _same_card(msg: discord.Message, card: discord.Embed) -> bool:
+    """Whether a posted guide message already shows this card (so it needn't be edited)."""
+    if len(msg.embeds) != 1:
+        return False
+    old = msg.embeds[0]
+    return (old.title == card.title and old.description == card.description
+            and (old.colour and old.colour.value) == (card.colour and card.colour.value)
+            and old.footer.text == card.footer.text and bool(old.image.url) == bool(card.image.url))
 CHAT_KINDS = {"PUBLIC_CHAT", "ANONYMOUS", "PRIVATE_MESSAGE", "PACT_MESSAGE"}   # no panel refresh needed
 DIRECTIONS = [app_commands.Choice(name=n, value=v) for n, v in [
     ("North (up)", "n"), ("North-east", "ne"), ("East (right)", "e"), ("South-east", "se"),
@@ -388,36 +398,48 @@ class Router:
             def files(n):
                 return [discord.File(io.BytesIO(pictures[n][1]), filename=pictures[n][0])] if pictures[n] else []
 
+            # One history read per channel, then only touch cards that changed:
+            # Discord allows ~5 edits per 5 seconds per channel, so re-editing
+            # every card on every run is what made /admin guides crawl.
             stored = self.svc.server.setdefault("guides", {}).get(key, [])
-            if len(stored) == len(cards):
-                try:
-                    for n, (mid, card) in enumerate(zip(stored, cards)):
-                        await ch.get_partial_message(mid).edit(embed=card, attachments=files(n))
-                    report.append(f"updated #{ch.name} ({len(cards)} cards)")
-                    continue
-                except discord.NotFound:
-                    pass
-            for mid in stored:                                   # layout changed: replace the set
-                try:
-                    await ch.get_partial_message(mid).delete()
-                except discord.HTTPException:
-                    pass
-            ids = [(await ch.send(embed=card, files=files(n), allowed_mentions=NO_PINGS)).id
-                   for n, card in enumerate(cards)]
-            self.svc.server["guides"][key] = ids
-            self.svc.save_server()
-            report.append(f"posted #{ch.name} ({len(cards)} cards)")
+            posted = {m.id: m async for m in ch.history(limit=100) if m.author.id == self.bot.user.id}
+            if stored and len(stored) == len(cards) and all(mid in posted for mid in stored):
+                changed = 0
+                for n, (mid, card) in enumerate(zip(stored, cards)):
+                    if not _same_card(posted[mid], card):
+                        await posted[mid].edit(embed=card, attachments=files(n))
+                        changed += 1
+                report.append(f"#{ch.name}: {changed} of {len(cards)} cards updated" if changed
+                              else f"#{ch.name}: already up to date")
+                ids = stored
+            else:
+                for mid in stored:                               # layout changed: replace the set
+                    if mid in posted:
+                        try:
+                            await posted[mid].delete()
+                        except discord.HTTPException:
+                            pass
+                ids = [(await ch.send(embed=card, files=files(n), allowed_mentions=NO_PINGS)).id
+                       for n, card in enumerate(cards)]
+                self.svc.server["guides"][key] = ids
+                self.svc.save_server()
+                report.append(f"posted #{ch.name} ({len(cards)} cards)")
             if key == "register":
-                report.append(await self._pin(ch, ids[0]))
+                msg = posted.get(ids[0])
+                if not (msg and msg.pinned):
+                    report.append(await self._pin(ch, ids[0]))
         report += await self._remove_stray_guide_copies()
         return report
 
     async def _pin(self, ch: discord.TextChannel, mid: int) -> str:
         """Pin a message and remove Discord's "pinned a message" notice."""
+        if not ch.permissions_for(ch.guild.me).pin_messages:
+            return (f"⚠️ Couldn't pin the #{ch.name} welcome: the bot's role is missing **Pin Messages**. "
+                    "Turn it on (Server Settings → Roles → the bot's role), then run `/admin guides` again.")
         try:
             await ch.get_partial_message(mid).pin(reason="Statecraft welcome")
         except discord.HTTPException as e:
-            return f"couldn't pin the #{ch.name} welcome ({e.text or e.status}); pin it by hand"
+            return f"⚠️ Couldn't pin the #{ch.name} welcome ({e.text or e.status})."
         async for m in ch.history(limit=5):
             if m.type == discord.MessageType.pins_add and m.author.id == self.bot.user.id:
                 try:
