@@ -17,6 +17,11 @@ from .models import Result
 
 NO_PINGS = discord.AllowedMentions.none()
 
+
+def ping_only(pid: str) -> discord.AllowedMentions:
+    """Allow exactly one user mention: the console owner being notified."""
+    return discord.AllowedMentions(everyone=False, roles=False, users=[discord.Object(int(pid))])
+
 HELP = """**Statecraft**: use the **control panel** at the bottom of your console. Conversations with other states open as private threads (✉️ Message a state). Every slash command below also works as a backup.
 **Before the game**: `/name` sets or changes your State's name · `/color` picks its color · `/leave` withdraws
 **Actions** (2:00-8:00 PM Central, 15-minute cooldown after each, always confirmed first):

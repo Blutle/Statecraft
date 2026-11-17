@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Awaitable, Callable
 import discord
 
 from . import geometry, render_image
-from .discord_format import ARROWS, DIRECTION_NAMES, HELP, NO_PINGS, board_message, own_status, panel_embed
+from .discord_format import ARROWS, DIRECTION_NAMES, HELP, NO_PINGS, board_message, ping_only, own_status, panel_embed
 from .game import Game
 from .models import Result
 
@@ -615,12 +615,16 @@ class UI:
     def _card(self, pid: str) -> discord.Embed:
         return panel_embed(self.svc.game, pid, self.svc.now(), self.svc.recent(pid))
 
-    async def post_panel(self, pid: str) -> None:
+    async def post_panel(self, pid: str, ping: bool = False) -> None:
         """Post a fresh panel at the bottom of the console, removing the old one.
 
         Not pinned: phones open a channel scrolled to the bottom, so the
         panel stays under the player's thumb, and pinning would add a
-        'pinned a message' notice each time."""
+        'pinned a message' notice each time.
+
+        `ping` @mentions the player (a small line above the card) so Discord
+        notifies them of new Recent activity. Only they and the referee can
+        see their console, so the mention reveals nothing."""
         ch = self.bot.get_channel(self.svc.console_of(pid) or 0)
         if not ch:
             return
@@ -630,19 +634,29 @@ class UI:
                 await ch.get_partial_message(old).delete()
             except discord.HTTPException:
                 pass
-        msg = await ch.send(embed=self._card(pid), view=self.panel_view(pid))
+        if ping:
+            msg = await ch.send(f"-# <@{pid}> new activity", embed=self._card(pid), view=self.panel_view(pid),
+                                allowed_mentions=ping_only(pid))
+        else:
+            msg = await ch.send(embed=self._card(pid), view=self.panel_view(pid), allowed_mentions=NO_PINGS)
         panels[pid] = msg.id
         self.svc.save_server()
 
-    def schedule_repost(self, pid: str) -> None:
-        """Move a player's panel back below a new console message (coalesced)."""
+    def schedule_repost(self, pid: str, ping: bool = False) -> None:
+        """Move a player's panel back below a new console message (coalesced).
+        A burst of notices gives one repost, and one ping if any asked for it."""
         tasks = self.__dict__.setdefault("_repost_tasks", {})
+        pings = self.__dict__.setdefault("_repost_pings", set())
+        if ping:
+            pings.add(pid)
         if (t := tasks.get(pid)) and not t.done():
             return
 
         async def run():
             await asyncio.sleep(1.5)
-            await self.post_panel(pid)
+            wanted = pid in pings
+            pings.discard(pid)
+            await self.post_panel(pid, ping=wanted)
 
         tasks[pid] = asyncio.create_task(run())
 

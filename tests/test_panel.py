@@ -63,6 +63,24 @@ class RecentActivityTests(unittest.TestCase):
         self.assertEqual(panel_embed(g, "100", NOW, []).fields, [])
 
 
+class PanelPingTests(unittest.TestCase):
+    def test_a_burst_of_notices_reposts_once_with_one_ping(self):
+        calls = []
+
+        async def go():
+            ui = fake_ui(game())
+
+            async def fake_post(pid, ping=False):
+                calls.append((pid, ping))
+            ui.post_panel = fake_post
+            ui.schedule_repost("100", ping=True)
+            ui.schedule_repost("100", ping=True)
+            ui.schedule_repost("101")                      # moved below a message, nothing new: no ping
+            await asyncio.sleep(1.7)
+        run(go())
+        self.assertEqual(sorted(calls), [("100", True), ("101", False)])
+
+
 class PanelLayoutTests(unittest.TestCase):
     def test_registration_hides_other_states(self):
         async def build():

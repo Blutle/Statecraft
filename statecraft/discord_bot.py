@@ -23,7 +23,7 @@ from discord import app_commands
 from discord.ext import tasks
 
 from . import colours, config, discord_setup, geometry, guides, render_image, schedule
-from .discord_format import (HELP, NO_PINGS, action_card, board_message, history_line, own_status, parse_duration, public_status,
+from .discord_format import (HELP, NO_PINGS, action_card, ping_only, board_message, history_line, own_status, parse_duration, public_status,
                              run_text)
 from .discord_service import GameService
 from .discord_ui import (UI, BoardRangeSelect, PactInviteButton, PanelButton, PanelSelect, ReplyButton, board_view,
@@ -247,11 +247,11 @@ class Router:
             return
         if view is None:
             self.svc.add_recent(pid, text[:300])
-            self.bot.ui.schedule_refresh()
+            self.bot.ui.schedule_repost(pid, ping=True)      # fresh panel at the bottom, with an @mention
             return
         ch = self.bot.get_channel(self.svc.console_of(pid) or 0)
         if ch:
-            await ch.send(text[:2000], view=view, allowed_mentions=NO_PINGS)
+            await ch.send(f"{text[:1900]}\n-# <@{pid}>", view=view, allowed_mentions=ping_only(pid))
             self.bot.ui.schedule_repost(pid)
 
     # ---- DMs: a private thread per correspondent inside each console
@@ -302,16 +302,22 @@ class Router:
         self.svc.set_console_hook(pid, {"id": hook.id, "token": hook.token})
         return hook
 
-    async def post_in_dm_thread(self, owner: str, other: str, text: str, username: str) -> None:
+    async def post_in_dm_thread(self, owner: str, other: str, text: str, username: str,
+                                ping: bool = False) -> None:
+        """Post in the owner's thread with `other`. `ping` @mentions the owner
+        (a small line under the message) so an incoming DM notifies them."""
         th = await self.open_dm_thread(owner, other)
         hook = await self.console_webhook(owner)
         if not th or not hook:
             return
+        body, mentions = text[:2000], NO_PINGS
+        if ping:
+            body, mentions = f"{text[:1960]}\n-# <@{owner}>", ping_only(owner)
         try:
-            await hook.send(text[:2000], username=username[:80], thread=th, allowed_mentions=NO_PINGS)
+            await hook.send(body, username=username[:80], thread=th, allowed_mentions=mentions)
         except discord.HTTPException:
             await th.edit(archived=False)                   # archived after a quiet week: reopen and retry
-            await hook.send(text[:2000], username=username[:80], thread=th, allowed_mentions=NO_PINGS)
+            await hook.send(body, username=username[:80], thread=th, allowed_mentions=mentions)
 
     async def deliver_dm(self, sender: str, recipient: str, text: str, echo: bool) -> None:
         g = self.svc.game
@@ -319,7 +325,7 @@ class Router:
         if self.svc.is_fake(recipient):
             await self.admin_log(f"[DM {s_name} -> {r_name}] {text}")
         else:
-            await self.post_in_dm_thread(recipient, sender, text, s_name)
+            await self.post_in_dm_thread(recipient, sender, text, s_name, ping=True)
         if echo and not self.svc.is_fake(sender):
             await self.post_in_dm_thread(sender, recipient, text, f"{s_name} (you)")
 

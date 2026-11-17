@@ -46,6 +46,11 @@ Every console has a **control panel** that always sits at the **bottom** of the 
 - Every reply to something you do (command results, rejections, confirmations, menus) is **private** and disappears when dismissed.
 - The only messages that stay in your console are the panel and things you need to answer, such as **pact invitations** (removed once you accept or decline). When one arrives, the panel moves back below it.
 - **Conversations** with other states live in their own private threads (below).
+- **You get @mentioned** whenever something arrives for you, so Discord notifies you:
+  - A Recent activity notice, such as a Gift received, your State destroyed, a referee change, Spy forwards, or a pact decline. The panel is reposted at the bottom with a small "@you new activity" line, and a burst of notices gives one ping.
+  - A pact invitation.
+  - Each incoming message in a conversation thread, with a small @mention line under it.
+  - Only you and the referee can see your console, so the mention reveals nothing. Your own actions and your own messages never ping you.
 
 | Panel control | What it does |
 |---|---|
