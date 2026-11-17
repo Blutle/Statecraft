@@ -146,7 +146,8 @@ class Game:
             return Result(True, f"Renamed {old} to {state_name} [{existing.marker}].",
                           data_event("RENAME", pid=pid))
 
-        if pid is None:
+        auto_id = pid is None
+        if auto_id:
             pid = f"p{self.state.next_player_num}"
         self.state.next_player_num += 1
         player = Player(
@@ -157,7 +158,10 @@ class Game:
             hp=self.s["starting_hp"],
         )
         self.state.players[pid] = player
-        return Result(True, f"{owner_name} registered {state_name} [{player.marker}] as {pid}.")
+        if auto_id:  # CLI: show the id used with `as`
+            return Result(True, f"{owner_name} registered {state_name} [{player.marker}] as {pid}.")
+        return Result(True, f"Your state is **{state_name}**, marker [{player.marker}] on the board. "
+                            f"You can rename it with `/name` until the game starts.")
 
     @recorded("unregister")
     def unregister(self, pid: str) -> Result:

@@ -39,6 +39,7 @@ DIRECTIONS = [app_commands.Choice(name=n, value=v) for n, v in [
     ("South (down)", "s"), ("South-west", "sw"), ("West (left)", "w"), ("North-west", "nw")]]
 
 HELP = """**Statecraft commands** (use them here in your console)
+**Before the game**: `/name` sets or changes your state's name · `/leave` withdraws
 **Actions** (2:00-8:00 PM Central, 15-minute cooldown after each):
 `/move` 1 AP · `/attack` 1 AP · `/upgrade` 2 AP (range +1) · `/gift` (give AP to a state in range) · `/buyinfo` 1 AP (see today's gifts until 8:15 PM)
 **Info** (free, any time): `/status` (you, or any state) · `/board` · `/info` · `/help`
@@ -354,8 +355,12 @@ def register_commands(bot: StatecraftBot) -> None:
         """The caller's player id if this is their console; otherwise reply and return None."""
         pid = str(i.user.id)
         cid = svc.console_of(pid)
-        if not svc.game.get(pid) or not cid:
-            await i.response.send_message("You're not registered. Use `/join` in #register.", ephemeral=True)
+        if not cid:
+            await i.response.send_message("You're not in the game. Use `/join` in #register.", ephemeral=True)
+            return None
+        if not svc.game.get(pid):
+            await i.response.send_message(f"Name your state first with `/name` in your console: <#{cid}>",
+                                          ephemeral=True)
             return None
         if i.channel_id != cid:
             await i.response.send_message(f"Use game commands in your console: <#{cid}>", ephemeral=True)
@@ -390,26 +395,45 @@ def register_commands(bot: StatecraftBot) -> None:
         return await states_autocomplete(i, current, False)
 
     # ---- registration
-    @tree.command(description="Join the next game (or rename your state before it starts)")
-    @app_commands.describe(name="Your state's name (kept private until it matters)")
-    async def join(i: discord.Interaction, name: app_commands.Range[str, 1, 40]):
+    # /join takes no name on purpose: if a slash command misfires in #register
+    # it posts as plain text, so the state name is only ever typed in the
+    # private console (/name).
+    @tree.command(description="Join the next game: creates your private console")
+    async def join(i: discord.Interaction):
         if i.channel_id != svc.channel_id("register"):
             await i.response.send_message(f"Use `/join` in <#{svc.channel_id('register')}>.", ephemeral=True)
             return
+        if svc.game.state.phase != "registration":
+            await i.response.send_message("Registration is closed; a game is in progress.", ephemeral=True)
+            return
         pid = str(i.user.id)
-        already = svc.game.get(pid) is not None
-        res = await svc.run(lambda g, now: g.register(i.user.display_name, name, pid=pid))
-        if not res.ok or already:
-            await i.response.send_message(res.message if res.ok else f"Rejected: {res.message}", ephemeral=True)
+        existing = svc.console_of(pid)
+        if existing and bot.get_channel(existing):
+            await i.response.send_message(f"You've already joined. Your console is <#{existing}>.", ephemeral=True)
             return
         await i.response.defer(ephemeral=True, thinking=True)
         console = await create_console(i.guild, i.user)
         svc.set_console(pid, console.id)
         await bot.router.grant_role(pid, "players")
-        await console.send(f"Welcome, **{svc.game.get(pid).state_name}**. This is your private console: only you "
-                           f"(and the referee) can see it. Run game commands here.\n\n{HELP}",
-                           allowed_mentions=NO_PINGS)
-        await i.followup.send(f"{res.message} Your console is {console.mention}.", ephemeral=True)
+        await console.send("Welcome to Statecraft. This is your **private console**: only you (and the referee) "
+                           "can see it. Run every game command here.\n\n"
+                           "**First, name your state** with `/name`. You can rename it any time before the game "
+                           f"starts.\n\n{HELP}", allowed_mentions=NO_PINGS)
+        await i.followup.send(f"You're in. Head to your console, {console.mention}, and name your state with `/name`.",
+                              ephemeral=True)
+
+    @tree.command(description="Name (or rename) your state before the game starts")
+    @app_commands.describe(name="Your state's name, up to 40 characters")
+    async def name(i: discord.Interaction, name: app_commands.Range[str, 1, 40]):
+        pid = str(i.user.id)
+        cid = svc.console_of(pid)
+        if not cid:
+            await i.response.send_message("Use `/join` in #register first.", ephemeral=True)
+            return
+        if i.channel_id != cid:
+            await i.response.send_message(f"Name your state in your console: <#{cid}>", ephemeral=True)
+            return
+        await reply(i, await svc.run(lambda g, now: g.register(i.user.display_name, name, pid=pid)))
 
     async def create_console(guild: discord.Guild, member: discord.abc.User) -> discord.TextChannel:
         cat = guild.get_channel(svc.server.get("console_category_id"))
@@ -425,17 +449,24 @@ def register_commands(bot: StatecraftBot) -> None:
     @tree.command(description="Withdraw from the game before it starts")
     async def leave(i: discord.Interaction):
         pid = str(i.user.id)
-        res = await svc.run(lambda g, now: g.unregister(pid))
-        if res.ok:
-            cid = svc.console_of(pid)
-            svc.set_console(pid, None)
-            ch = bot.get_channel(cid) if cid else None
-            if ch:
-                await ch.delete(reason="Statecraft: player left")
-            rid = svc.role_id("players")
-            if rid and isinstance(i.user, discord.Member):
-                await i.user.remove_roles(discord.Object(rid))
-        await i.response.send_message(res.message if res.ok else f"Rejected: {res.message}", ephemeral=True)
+        cid = svc.console_of(pid)
+        if svc.game.get(pid):
+            res = await svc.run(lambda g, now: g.unregister(pid))
+            if not res.ok:
+                await i.response.send_message(f"Rejected: {res.message}", ephemeral=True)
+                return
+        elif not cid:
+            await i.response.send_message("You haven't joined.", ephemeral=True)
+            return
+        # Reply before deleting: the command may have been run in the console itself.
+        await i.response.send_message("You've left the game. Your console will be deleted.", ephemeral=True)
+        svc.set_console(pid, None)
+        ch = bot.get_channel(cid) if cid else None
+        if ch:
+            await ch.delete(reason="Statecraft: player left")
+        rid = svc.role_id("players")
+        if rid and isinstance(i.user, discord.Member):
+            await i.user.remove_roles(discord.Object(rid))
 
     # ---- actions
     @tree.command(description="Move one square (1 AP)")
@@ -568,6 +599,13 @@ def register_commands(bot: StatecraftBot) -> None:
     @admin.command(description="Start the game (needs 12+ players)")
     async def start(i: discord.Interaction):
         if await admin_only(i):
+            unnamed = [pid for pid in svc.server["consoles"] if not svc.game.get(pid)]
+            if unnamed:
+                await i.response.send_message(
+                    f"Rejected: {len(unnamed)} player(s) joined but haven't named a state: "
+                    + ", ".join(f"<@{p}>" for p in unnamed) + ". They need to run `/name` in their console "
+                    "(or `/leave`).", ephemeral=True, allowed_mentions=NO_PINGS)
+                return
             await reply(i, await svc.run(lambda g, now: g.start(now=now)), ephemeral=True)
 
     @admin.command(name="status", description="Full game view, including owners and AP")

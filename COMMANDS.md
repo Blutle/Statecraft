@@ -4,7 +4,7 @@ The Discord command reference. Update this file whenever a command is added, cha
 
 **Build status (2026-11-17):**
 - **Built:**
-  - Registration: `/join` (including renaming) and `/leave`, plus console creation.
+  - Registration: `/join` (console only), `/name` (set or rename), and `/leave`.
   - All gameplay actions, `/status` (own and other states), `/board` (text version), `/info`, `/help`, `/notify`, `/say`, `/dm` with the Reply pop-up, `/anon`, `/vote`.
   - Admin: `setup`, `start`, `status`, `give`, `declare`, `juryscore`, `reload`, `reset`.
   - Every test-mode command.
@@ -18,7 +18,7 @@ The Discord command reference. Update this file whenever a command is added, cha
 Every command is a slash command. Replies are **private** (only the person who ran the command sees them) unless the table says something is posted publicly. Every command, including rejected attempts, is written to the game history log (see `IMPLEMENTATION_PLAN.md` §4b).
 
 **Where commands work:**
-- **#register:** `/join` and `/leave` only.
+- **#register:** `/join` only (`/leave` works anywhere).
 - **Your console:** everything a player does. Console commands used anywhere else are rejected, because a slash command in a public channel would show who used it.
 - **Anywhere:** admin commands (`ADMIN_IDS` in `.env` only).
 
@@ -26,12 +26,17 @@ Every command is a slash command. Replies are **private** (only the person who r
 
 ---
 
-## Registration (in #register, before the game starts)
+## Registration (before the game starts)
 
-| Command | What it does |
-|---|---|
-| `/join name:<state name>` | Registers you and your state. The private reply means nobody sees which name is yours. You get `@Statecraft-Players` and a private console channel with a random name (e.g. `#console-7f3a`) that only you, the bot, and the admin can see. Names must be unique, up to 40 characters. **Running `/join` again before the game starts renames your state.** |
-| `/leave` | Withdraws before the game starts, removes your role, and deletes your console. |
+Your state name is only ever typed in your **private console**, never in #register. If a slash command misfires (say, Enter is pressed before Discord picks up the command), the text posts as an ordinary chat message, so `/join` takes no name.
+
+| Command | Where | What it does |
+|---|---|---|
+| `/join` | #register | Creates your private console (a random name like `#console-7f3a`, visible only to you, the bot, and the admin) and gives you `@Statecraft-Players`. The reply is private. |
+| `/name name:<state name>` | your console | Sets your state's name, or renames it. You can rename any time before the game starts. Names must be unique, up to 40 characters, and can't contain @, #, <, >, backticks, asterisks, underscores, tildes, pipes, or backslashes. |
+| `/leave` | anywhere | Withdraws before the game starts, removes your role, and deletes your console. |
+
+`/admin start` refuses to start while anyone has joined but not named a state.
 
 ## Gameplay actions (console only)
 
