@@ -148,7 +148,20 @@ class LifecycleTests(unittest.TestCase):
         g = Game()
         self.assertTrue(g.register("a", "X" * 24, pid="1").ok)
         self.assertFalse(g.register("b", "Y" * 25, pid="2").ok)
+        g.register("b", "Y", pid="2")
+        g.start(force=True)
         self.assertTrue(g.create_pact("1", "P" * 40).ok)          # pact names keep their 40 limit
+        self.assertFalse(g.create_pact("1", "P" * 41).ok)
+
+    def test_pacts_wait_for_the_start(self):
+        g = Game()
+        g.register("a", "Alpha", pid="1")
+        g.register("b", "Beta", pid="2")
+        res = g.create_pact("1", "Early Birds")
+        self.assertFalse(res.ok)
+        self.assertIn("when the game starts", res.message)
+        g.start(force=True)
+        self.assertTrue(g.create_pact("1", "Early Birds").ok)
 
     def test_state_names_reject_discord_markup(self):
         g = Game()

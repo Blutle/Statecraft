@@ -112,7 +112,9 @@ def how_to_play(s: dict) -> list[tuple[str, str]]:
          "• Tap **🎨 Pick a color** to choose your State's color on the map. It's **first come, first served**, "
          "so no two States share a color. If you don't pick one, you'll get a free color when the game starts.\n"
          "• You can change your name, abbreviation, and color until the game starts.\n"
-         "• Changed your mind? `/leave` before the game starts."),
+         "• Changed your mind? `/leave` before the game starts.
+"
+         "• Who else has joined stays secret until the game starts; pacts and messages open then."),
 
         ("🎛️ Your control panel",
          "The **control panel** always sits at the **bottom of your console**. On a phone, everything is a tap or "

@@ -64,6 +64,20 @@ class RecentActivityTests(unittest.TestCase):
 
 
 class PanelLayoutTests(unittest.TestCase):
+    def test_registration_hides_other_states(self):
+        async def build():
+            g = game("registration")
+            ui = fake_ui(g)
+            return ui, ui.panel_view("100"), g
+        ui, view, g = run(build())
+        ids = [getattr(c, "custom_id", None) for c in view.children]
+        self.assertNotIn("panel:b:pacts", ids)                 # no pact invite list to browse
+        for q in ("Veyran Empire", "Kesh", "Nowhere", "101"):  # every lookup fails the same way
+            self.assertEqual(ui.resolve(q), (None, "Other States stay hidden until the game starts."))
+        self.assertEqual(ui.resolve("Kesh", admin=True)[0], "102")
+        g.start(force=True, now=NOW)
+        self.assertEqual(ui.resolve("Kesh")[0], "102")
+
     def test_views_build_in_every_phase(self):
         async def build():
             out = {}

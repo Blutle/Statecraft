@@ -536,6 +536,8 @@ def register_commands(bot: StatecraftBot) -> None:
         return i.user.id in bot.cfg.admin_ids
 
     async def states_autocomplete(i: discord.Interaction, current: str, alive_only: bool):
+        if svc.game.state.phase == "registration" and not is_admin(i):
+            return []                      # who has joined stays secret until the start
         cur = current.lower()
         out = []
         for p in svc.game.state.players.values():
@@ -950,7 +952,7 @@ def register_commands(bot: StatecraftBot) -> None:
     async def give(i: discord.Interaction, state: str, amount: int):
         if not await admin_only(i):
             return
-        tid, err = ui.resolve(state)
+        tid, err = ui.resolve(state, admin=True)
         await ui.reply(i, await svc.run(lambda g, now: g.give_ap(tid, amount)) if tid else Result.fail(err),
                        ephemeral=True)
 
@@ -966,7 +968,7 @@ def register_commands(bot: StatecraftBot) -> None:
                    announce: bool = True):
         if not await admin_only(i):
             return
-        tid, err = ui.resolve(state)
+        tid, err = ui.resolve(state, admin=True)
         if not tid:
             await i.response.send_message(f"Rejected: {err}", ephemeral=True)
             return
@@ -992,7 +994,7 @@ def register_commands(bot: StatecraftBot) -> None:
             return
         ids, errors = [], []
         for q in [x.strip() for x in states.split(",") if x.strip()]:
-            tid, err = ui.resolve(q)
+            tid, err = ui.resolve(q, admin=True)
             (ids.append(tid) if tid else errors.append(err))
         if errors:
             await i.response.send_message("Rejected: " + " ".join(errors), ephemeral=True)
@@ -1065,7 +1067,7 @@ def register_commands(bot: StatecraftBot) -> None:
             return
         pid = None
         if state:
-            pid, err = ui.resolve(state)
+            pid, err = ui.resolve(state, admin=True)
             if not pid:
                 await i.response.send_message(f"Rejected: {err}", ephemeral=True)
                 return
@@ -1210,7 +1212,7 @@ def register_commands(bot: StatecraftBot) -> None:
     async def as_(i: discord.Interaction, state: str, command: str):
         if not await admin_only(i):
             return
-        tid, err = ui.resolve(state)
+        tid, err = ui.resolve(state, admin=True)
         if not tid:
             await i.response.send_message(f"Rejected: {err}", ephemeral=True)
             return

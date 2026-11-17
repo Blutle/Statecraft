@@ -500,7 +500,11 @@ class UI:
 
     # ---- basics
 
-    def resolve(self, q: str) -> tuple[str | None, str]:
+    def resolve(self, q: str, admin: bool = False) -> tuple[str | None, str]:
+        """A State id from a typed name/abbreviation. Before the start every
+        lookup fails the same way, so typing names can't probe who joined."""
+        if self.svc.game.state.phase == "registration" and not admin:
+            return None, "Other States stay hidden until the game starts."
         if q in self.svc.game.state.players:
             return q, ""
         p, err = self.svc.game.find(q)
@@ -592,7 +596,6 @@ class UI:
             view.add_item(PanelButton("name", "Rename my state" if p else "Name my state", B.primary, 0, "✏️"))
             if p:
                 view.add_item(PanelButton("color", "Pick a color", B.secondary, 0, "🎨"))
-                view.add_item(PanelButton("pacts", "Pacts", B.secondary, 0, "🤝"))
             view.add_item(PanelButton("help", "Help", B.secondary, 0))
             return view
         if phase == "active":

@@ -72,6 +72,8 @@ Your state name is only ever typed in your **private console**, never in #regist
 
 `/admin start` refuses to start while anyone has joined but not named a state.
 
+**Who has joined stays secret until the start.** Before then, player commands never list or look up other States: autocomplete suggests nothing, any typed State name gets the same "Other States stay hidden until the game starts" reply, and pacts open only once the game starts. Admin commands (`/admin status`, `give`, `edit`, `/test as`) still see everyone.
+
 ## Gameplay actions (console only)
 
 Each action is allowed only **2:00–8:00 PM Central** and starts your **15-minute cooldown**, shared by all actions. Rejected actions cost nothing and don't start a cooldown. Living states only.
@@ -120,7 +122,7 @@ Pacts let players form anonymous group chats, such as alliances, by inviting oth
 
 | Command | What it does |
 |---|---|
-| `/pact create name:<pact name>` | Creates a pact with you as its founder, plus your copy of its channel. **Each player can found up to 3 pacts.** |
+| `/pact create name:<pact name>` | Creates a pact with you as its founder, plus your copy of its channel. **Each player can found up to 3 pacts.** Pacts open when the game starts. |
 | `/pact invite pact:<pact> state:<state>` | **Founder only.** Invites a state. The invitee's console gets an invitation with **Accept** / **Decline** buttons, showing the pact name and the founder's state name. |
 | `/pact leave pact:<pact>` | Leaves the pact. Your copy of the channel is deleted, and the other members are told that your state left. |
 | `/pact kick pact:<pact> state:<state>` | Founder only: removes a member. |

@@ -874,6 +874,8 @@ class Game:
         p = self.get(pid)
         if not p:
             return None, "You are not a player in this game."
+        if self.state.phase == "registration":
+            return None, "Pacts open when the game starts."
         if self.state.phase == "ended":
             return None, "The game is over."
         return p, ""
