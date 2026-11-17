@@ -616,7 +616,7 @@ def register_commands(bot: StatecraftBot) -> None:
                                        + ui.ap_note(pid, svc.game.s["move_cost"]),
                                     lambda g, now: g.move(pid, direction.value, now=now))
 
-    @tree.command(description="Attack a state in range (1 AP)")
+    @tree.command(description="Attack a State within your Influence (1 AP)")
     @app_commands.autocomplete(state=alive_states)
     async def attack(i: discord.Interaction, state: str):
         if pid := await ui.console_pid(i):
@@ -629,15 +629,15 @@ def register_commands(bot: StatecraftBot) -> None:
                                        + ui.ap_note(pid, svc.game.s["attack_cost"]),
                                     lambda g, now: g.attack(pid, tid, now=now))
 
-    @tree.command(description="Increase your range by 1 (2 AP)")
+    @tree.command(description="Increase your Influence by 1 (2 AP)")
     async def upgrade(i: discord.Interaction):
         if pid := await ui.console_pid(i):
             r = svc.game.range_of(svc.game.get(pid))
-            await ui.confirm_action(i, f"Upgrade your range from {r} to **{r + 1}**? "
+            await ui.confirm_action(i, f"Upgrade your Influence from {r} to **{r + 1}**? "
                                        + ui.ap_note(pid, svc.game.s["upgrade_cost"]),
                                     lambda g, now: g.upgrade(pid, now=now))
 
-    @tree.command(description="Gift AP to a state in range (private)")
+    @tree.command(description="Gift AP to a State within your Influence (private)")
     @app_commands.autocomplete(state=alive_states)
     async def gift(i: discord.Interaction, state: str, amount: app_commands.Range[int, 1, 999]):
         if pid := await ui.console_pid(i):
@@ -650,11 +650,11 @@ def register_commands(bot: StatecraftBot) -> None:
                                        + ui.ap_note(pid, amount),
                                     lambda g, now: g.gift(pid, tid, amount, now=now))
 
-    @tree.command(description="See today's AP gifts until 8:15 PM (1 AP)")
-    async def buyinfo(i: discord.Interaction):
+    @tree.command(description="Spy: see the top-secret log of today's Gifts until 8:15 PM (1 AP)")
+    async def spy(i: discord.Interaction):
         if pid := await ui.console_pid(i):
-            await ui.confirm_action(i, "Buy information access (today's AP gifts, until 8:15 PM)? The purchase is "
-                                       "announced publicly. " + ui.ap_note(pid, svc.game.s["info_cost"]),
+            await ui.confirm_action(i, "**Spy**: see the top-secret log of every Gift made today (until 8:15 PM)? "
+                                       "Spying is announced publicly. " + ui.ap_note(pid, svc.game.s["info_cost"]),
                                     lambda g, now: g.buy_info(pid, now=now))
 
     @tree.command(description="Jury: secretly vote for a surviving state (8:00 PM-1:45 PM)")
@@ -677,7 +677,7 @@ def register_commands(bot: StatecraftBot) -> None:
         await i.response.send_message(public_status(svc.game, pid, tid) if tid else f"Rejected: {err}",
                                       allowed_mentions=NO_PINGS, ephemeral=True)
 
-    @tree.command(description="Show the board here, with a state's range highlighted")
+    @tree.command(description="Show the board here, with a State's Influence highlighted")
     @app_commands.autocomplete(state=any_states)
     async def board(i: discord.Interaction, state: str | None = None):
         if not (pid := await ui.console_pid(i)):
@@ -685,13 +685,13 @@ def register_commands(bot: StatecraftBot) -> None:
         focus = ui.resolve(state)[0] if state else pid
         await ui.send_board(i, focus=focus or pid)
 
-    @tree.command(description="Re-show today's AP gifts (needs /buyinfo)")
-    async def info(i: discord.Interaction):
+    @tree.command(description="Re-show today's Spy log (needs /spy)")
+    async def spylog(i: discord.Interaction):
         if pid := await ui.console_pid(i):
             if pid in svc.game.state.info_access:
                 await i.response.send_message(f"```\n{svc.game.gift_report()}\n```", ephemeral=True)
             else:
-                await i.response.send_message("You don't have information access today. Use `/buyinfo` (1 AP).",
+                await i.response.send_message("You're not spying today. Use `/spy` (1 AP).",
                                               ephemeral=True)
 
     @tree.command(name="help", description="Commands and rules summary")
@@ -876,13 +876,13 @@ def register_commands(bot: StatecraftBot) -> None:
         for p in g.state.players.values():
             cd = g.cooldown_remaining(p, svc.now())
             lines.append(f"{p.marker:<3} {p.state_name:<24} {p.owner_name[:16]:<16} AP {p.ap:<3} HP {p.hp} "
-                         f"{g.pos(p):<4} R{g.range_of(p)} {'alive' if p.alive else 'dead'}"
+                         f"{g.pos(p):<4} Inf{g.range_of(p)} {'alive' if p.alive else 'dead'}"
                          + (f" cd {schedule.fmt_duration(cd)}" if cd else ""))
         if g.state.jury_votes:
             lines.append("Ballots: " + ", ".join(f"{g.get(j).state_name}->{g.get(t).state_name}"
                                                  for j, t in g.state.jury_votes.items()))
         if g.state.info_access:
-            lines.append("Info access: " + ", ".join(g.get(p).state_name for p in g.state.info_access))
+            lines.append("Spying: " + ", ".join(g.get(p).state_name for p in g.state.info_access))
         await i.response.send_message("```\n" + "\n".join(lines)[:1900] + "\n```", ephemeral=True)
 
     @admin.command(description="Add (or remove, if negative) AP")
@@ -894,11 +894,11 @@ def register_commands(bot: StatecraftBot) -> None:
         await ui.reply(i, await svc.run(lambda g, now: g.give_ap(tid, amount)) if tid else Result.fail(err),
                        ephemeral=True)
 
-    @admin.command(description="Edit any stored value of a state: name, abbreviation, AP, HP, range, position...")
+    @admin.command(description="Edit any stored value of a State: name, abbreviation, AP, HP, Influence, position...")
     @app_commands.autocomplete(state=any_states)
     @app_commands.choices(field=[app_commands.Choice(name=n, value=v) for n, v in [
         ("Name", "name"), ("Abbreviation", "abbreviation"), ("AP", "ap"), ("HP (0 destroys, >0 revives)", "hp"),
-        ("Range", "range"), ("Position (square like C5)", "position"), ("Cooldown (value: reset)", "cooldown"),
+        ("Influence", "range"), ("Position (square like C5)", "position"), ("Cooldown (value: reset)", "cooldown"),
         ("Owner name (revealed on elimination)", "owner")]])
     @app_commands.describe(value="New value: text, a number, a square like C5, or 'reset' for cooldown",
                            announce="Post changes to public stats in #action-log (default: yes)")

@@ -1,11 +1,11 @@
 """Board image (PNG) with Pillow, designed to read well on a phone.
 
-The image shows public information only: positions, HP, range, alive or
+The image shows public information only: positions, HP, Influence, alive or
 destroyed, and the owners of destroyed states. It never includes AP or the
 owners of living states.
 
 render(game, focus=None, viewer=None) -> PNG bytes
-  focus:  a state whose range is tinted on the board
+  focus:  a state whose Influence is tinted on the board
   viewer: the player looking (their tile is outlined in white, and every
           state that can reach them gets a red ring)
 """
@@ -146,7 +146,7 @@ def render(game: Game, focus: str | None = None, viewer: str | None = None) -> b
     sub_room = width - 2 * pad - (260 if focus_p else 0)
     d.text((pad, 46), sub, font=_fit(d, sub, sub_room, 17, False, min_size=14), fill=MUTED)
     if focus_p:
-        note = f"Showing range {game.range_of(focus_p)} of {focus_p.marker}"
+        note = f"Showing Influence {game.range_of(focus_p)} of {focus_p.marker}"
         tw = d.textlength(note, font=_font(17, True))
         d.text((width - pad - tw, 46), note, font=_font(17, True), fill=colours[focus_p.id])
 
@@ -221,7 +221,7 @@ def render(game: Game, focus: str | None = None, viewer: str | None = None) -> b
 
     # Legend
     d.text((pad, legend_top), "States", font=_font(20, True), fill=TEXT)
-    hint = "number in the corner = range · dots = HP"
+    hint = "number in the corner = Influence · dots = HP"
     if viewer_p:
         hint += " · white = you · red ring = can reach you"
     d.text((pad + 90, legend_top + 4), hint, font=_font(14), fill=MUTED)
@@ -248,7 +248,7 @@ def render(game: Game, focus: str | None = None, viewer: str | None = None) -> b
             tags.append("you")
         d.text((tx, y - 1), name, font=name_font, fill=TEXT if p.alive else DEAD_TEXT)
         if p.alive:
-            detail = f"HP {p.hp}/{max_hp} · range {game.range_of(p)} · {game.pos(p)}"
+            detail = f"HP {p.hp}/{max_hp} · Influence {game.range_of(p)} · {game.pos(p)}"
             colour = MUTED
             if p.id in threats:
                 detail += " · can reach you"

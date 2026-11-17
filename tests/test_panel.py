@@ -43,7 +43,7 @@ class PanelEmbedTests(unittest.TestCase):
         d = panel_embed(g, "100", NOW).description
         self.assertIn("AP 4", d)
         self.assertIn("open", d)
-        self.assertIn("In your range: VE", d)
+        self.assertIn("Within your Influence: VE", d)
         g.get("100").alive, g.get("100").hp = False, 0
         self.assertIn("Jury", panel_embed(g, "100", NOW).description)
         g.declare_winners(["101"])

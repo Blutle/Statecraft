@@ -30,18 +30,18 @@ WHO AM I
   admin                         Stop acting as anyone
 
 LOOKING
-  board                         Show the board (with your range marked ':')
+  board                         Show the board (with your Influence marked ':')
   states                        Public state list
   status                        Your private status (AP, etc.)
-  info                          Re-show today's AP gifts (needs info access)
+  spylog                        Re-show today's Spy log (needs spy)
   log [n]                       Last n public events (default 15)
 
 ACTIONS (current player)
   move <dir>                    n, ne, e, se, s, sw, w, nw          (1 AP)
-  attack <state>                Deal 1 damage to a state in range   (1 AP)
-  upgrade                       Range +1                            (2 AP)
-  gift <state> <amount>         Give AP to a state in range         (amount)
-  buyinfo                       See today's AP gifts                (1 AP)
+  attack <state>                Deal 1 damage within your Influence (1 AP)
+  upgrade                       Influence +1                        (2 AP)
+  gift <state> <amount>         Give AP within your Influence       (amount)
+  spy                           See today's Gift log                (1 AP)
   vote <state>                  Jury only: vote for a surviving state
 
 MESSAGES (free, logged in full, including anonymous posts' real author; jurors too)
@@ -52,7 +52,7 @@ MESSAGES (free, logged in full, including anonymous posts' real author; jurors t
 TIME / ADMIN
   nextday                       End the day: jury tally, then +1 AP to survivors
   give <player> <amount>        Admin: add (or remove, if negative) AP
-  edit <player> <field> <value> Admin: set name, abbreviation, ap, hp, range, position, cooldown, owner
+  edit <player> <field> <value> Admin: set name, abbreviation, ap, hp, range (Influence), position, cooldown, owner
   declare <state> [state...]    Admin: end the game with these survivors as (joint) winners
   juryscore                     Admin: after the game, rank jurors by votes for the winner(s)
   history [n]                   Admin: last n records of the full history log (default 10)
@@ -217,7 +217,7 @@ class CLI:
         if not pid:
             return
         if pid not in self.game.state.info_access:
-            print("You don't have information access today. Use 'buyinfo' (1 AP).")
+            print("You're not spying today. Use 'spy' (1 AP).")
             return
         print(self.game.gift_report())
 
@@ -257,7 +257,7 @@ class CLI:
         if t:
             self.show(self.game.gift(pid, t.id, int(a[-1])))
 
-    def cmd_buyinfo(self, a):
+    def cmd_spy(self, a):
         pid = self._me()
         if pid:
             self.show(self.game.buy_info(pid))

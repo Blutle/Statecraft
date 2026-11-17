@@ -318,8 +318,8 @@ class Game:
         if not t.alive:
             return None, f"{t.state_name} has been eliminated."
         if not self.in_range(actor, t):
-            return None, (f"{t.state_name} at {self.pos(t)} is out of range "
-                          f"(distance {geometry.distance(actor.x, actor.y, t.x, t.y)}, your range {self.range_of(actor)}).")
+            return None, (f"{t.state_name} at {self.pos(t)} is outside your Influence "
+                          f"(distance {geometry.distance(actor.x, actor.y, t.x, t.y)}, your Influence {self.range_of(actor)}).")
         return t, ""
 
     @recorded("move")
@@ -412,8 +412,8 @@ class Game:
         self._stamp(p, now)
         p.range_upgrades += 1
         r = self.range_of(p)
-        return self._done(Result(True, f"Range is now {r}. AP left: {p.ap}.", [Event(
-            "UPGRADE", data={"pid": p.id, "range": r}, public=f"{p.state_name} increased its range to {r}.", ping="opt_in")]))
+        return self._done(Result(True, f"Your Influence is now {r}. AP left: {p.ap}.", [Event(
+            "UPGRADE", data={"pid": p.id, "range": r}, public=f"{p.state_name} increased its Influence to {r}.", ping="opt_in")]))
 
     @recorded("gift")
     def gift(self, pid: str, tid: str, amount: int, *, now: datetime | None = None) -> Result:
@@ -422,7 +422,7 @@ class Game:
         p, err = self._actor(pid, amount, now)
         if err:
             return Result.fail(err)
-        t, err = self._target(p, tid, "gift AP to")
+        t, err = self._target(p, tid, "gift to")
         if err:
             return Result.fail(err)
         p.ap -= amount
@@ -444,15 +444,15 @@ class Game:
         if err:
             return Result.fail(err)
         if pid in self.state.info_access:
-            return Result.fail("You already have information access for today.")
+            return Result.fail("You're already spying today.")
         p.ap -= cost
         self._stamp(p, now)
         self.state.info_access.append(pid)
         return self._done(Result(
             True,
-            f"Information access purchased until {self._info_until(now)}. AP left: {p.ap}.\n"
+            f"You're spying until {self._info_until(now)}. AP left: {p.ap}.\n"
             + self.gift_report(),
-            [Event("INFO_PURCHASE", public=f"{p.state_name} purchased information access.", ping="opt_in",
+            [Event("INFO_PURCHASE", public=f"{p.state_name} is spying.", ping="opt_in",
                    data={"pid": p.id})],
         ))
 
@@ -463,8 +463,8 @@ class Game:
 
     def gift_report(self) -> str:
         if not self.state.gifts_today:
-            return f"No AP gifts so far on Day {self.state.day}."
-        lines = [f"AP gifts on Day {self.state.day}:"]
+            return f"Spy log: no Gifts so far on Day {self.state.day}."
+        lines = [f"Spy log: Gifts on Day {self.state.day}"]
         for gf in self.state.gifts_today:
             lines.append(f"  {self.get(gf['from']).state_name} gifted {self.get(gf['to']).state_name} {gf['amount']} AP")
         return "\n".join(lines)
@@ -595,8 +595,8 @@ class Game:
         """8:15 PM: purchased information access fades."""
         had = list(self.state.info_access)
         self.state.info_access = []
-        private = {pid: "Your information access has expired." for pid in had if self.get(pid).alive}
-        return self._done(Result(True, f"Information access expired for {len(had)} state(s).",
+        private = {pid: "Your Spy access has ended for today." for pid in had if self.get(pid).alive}
+        return self._done(Result(True, f"Spy access ended for {len(had)} State(s).",
                                  [Event("INFO_EXPIRED", private=private)] if private else []))
 
     @recorded("admin_declare_winners")
@@ -621,7 +621,7 @@ class Game:
 
     # Referee edits: every stored attribute of a state.
     ADMIN_FIELDS = {
-        "name": "name", "abbreviation": "abbreviation", "ap": "AP", "hp": "HP", "range": "range",
+        "name": "name", "abbreviation": "abbreviation", "ap": "AP", "hp": "HP", "range": "Influence",
         "position": "position", "cooldown": "cooldown", "owner": "owner name",
     }
     PUBLIC_FIELDS = {"name", "abbreviation", "hp", "range", "position"}

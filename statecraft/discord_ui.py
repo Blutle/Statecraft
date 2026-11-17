@@ -298,11 +298,11 @@ class PactMenuView(discord.ui.View):
 # --------------------------------------------------------------------- board
 
 class BoardRangeSelect(discord.ui.DynamicItem[discord.ui.Select], template=r"board:range"):
-    """'Show range for...' under every board image (public and private).
+    """'Show Influence for...' under every board image (public and private).
     The answer is always private to whoever picked."""
 
     def __init__(self, options: list[discord.SelectOption] | None = None):
-        super().__init__(discord.ui.Select(custom_id="board:range", placeholder="Show range for…",
+        super().__init__(discord.ui.Select(custom_id="board:range", placeholder="Show Influence for…",
                                            options=options or [discord.SelectOption(label="(none)", value="none")]))
 
     @classmethod
@@ -319,7 +319,7 @@ def board_view(game: Game) -> discord.ui.View | None:
     alive = sorted(game.alive_players(), key=lambda p: p.state_name.lower())
     if not alive:
         return None
-    options = [discord.SelectOption(label=f"{p.state_name}"[:100], value=p.id, description=f"{p.marker} · range "
+    options = [discord.SelectOption(label=f"{p.state_name}"[:100], value=p.id, description=f"{p.marker} · Influence "
                                     f"{game.range_of(p)} · {game.pos(p)}") for p in alive[:25]]
     view = discord.ui.View(timeout=None)
     view.add_item(BoardRangeSelect(options))
@@ -359,11 +359,11 @@ class PanelSelect(discord.ui.DynamicItem[discord.ui.Select], template=r"panel:ac
 
 ACTIONS_ALIVE = [
     discord.SelectOption(label="Move", value="move", emoji="🧭", description="1 AP · one square"),
-    discord.SelectOption(label="Attack", value="attack", emoji="⚔️", description="1 AP · 1 damage to a state in range"),
-    discord.SelectOption(label="Gift AP", value="gift", emoji="🎁", description="Give AP to a state in range (private)"),
-    discord.SelectOption(label="Upgrade range", value="upgrade", emoji="📡", description="2 AP · range +1"),
-    discord.SelectOption(label="Buy info", value="buyinfo", emoji="🔍",
-                         description="1 AP · see today's gifts until 8:15 PM"),
+    discord.SelectOption(label="Attack", value="attack", emoji="⚔️", description="1 AP · 1 damage to a State within your Influence"),
+    discord.SelectOption(label="Gift", value="gift", emoji="🎁", description="Give AP to a State within your Influence (private)"),
+    discord.SelectOption(label="Upgrade Influence", value="upgrade", emoji="📡", description="2 AP · Influence +1"),
+    discord.SelectOption(label="Spy", value="buyinfo", emoji="🕵️",
+                         description="1 AP · see today's top-secret Gift log until 8:15 PM"),
 ]
 ACTIONS_JURY = [
     discord.SelectOption(label="Vote", value="vote", emoji="🗳️", description="Secret jury vote (8 PM-1:45 PM)"),
@@ -718,20 +718,20 @@ class UI:
         elif action in ("attack", "gift"):
             targets = [t for t in g.alive_players() if t.id != pid and g.in_range(me, t)]
             if not targets:
-                await i.response.send_message(f"No states are in your range (range {g.range_of(me)}). "
-                                              "Move closer or upgrade your range.", ephemeral=True)
+                await i.response.send_message(f"No States are within your Influence ({g.range_of(me)}). "
+                                              "Move closer or upgrade your Influence.", ephemeral=True)
             else:
-                verb = "attack (1 AP)" if action == "attack" else "gift AP to"
-                await i.response.send_message(f"Who do you want to {verb}? Only states in range are listed.",
+                verb = "attack (1 AP)" if action == "attack" else "Gift to"
+                await i.response.send_message(f"Who do you want to {verb}? Only States within your Influence are listed.",
                                               view=TargetView(self, pid, action, targets), ephemeral=True)
         elif action == "upgrade":
             r = g.range_of(me)
-            await self.confirm_action(i, f"Upgrade your range from {r} to **{r + 1}**? "
+            await self.confirm_action(i, f"Upgrade your Influence from {r} to **{r + 1}**? "
                                          + self.ap_note(pid, g.s["upgrade_cost"]),
                                       lambda g, now: g.upgrade(pid, now=now), ephemeral=True)
         elif action == "buyinfo":
-            await self.confirm_action(i, "Buy information access (today's AP gifts, until 8:15 PM)? The purchase "
-                                         "is announced publicly. " + self.ap_note(pid, g.s["info_cost"]),
+            await self.confirm_action(i, "**Spy**: see the top-secret log of every Gift made today (until 8:15 PM)? "
+                                         "Spying is announced publicly. " + self.ap_note(pid, g.s["info_cost"]),
                                       lambda g, now: g.buy_info(pid, now=now), ephemeral=True)
         elif action == "vote":
             await i.response.send_message("Vote for which surviving state? (secret; you can change it until "

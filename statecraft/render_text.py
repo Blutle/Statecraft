@@ -29,7 +29,7 @@ def board(game: Game, viewer: Player | None = None) -> str:
             row += f"{cell:<4}"
         lines.append(row.rstrip())
     if rng is not None:
-        lines.append(f"\n':' = within range {rng} of {viewer.state_name} [{viewer.marker}]")
+        lines.append(f"\n':' = within Influence {rng} of {viewer.state_name} [{viewer.marker}]")
     lines.append("")
     lines.append(legend(game, viewer))
     return "\n".join(lines)
@@ -38,14 +38,14 @@ def board(game: Game, viewer: Player | None = None) -> str:
 def legend(game: Game, viewer: Player | None = None) -> str:
     """Public information only: no AP, and no owners of living states."""
     rows = [f"Day {game.state.day}  |  {len(game.alive_players())} states remaining", ""]
-    rows.append(f"  {'Abv':<4} {'State':<{_w(game)}} {'Pos':<4} {'HP':<3} {'Rng':<4} Status")
+    rows.append(f"  {'Abv':<4} {'State':<{_w(game)}} {'Pos':<4} {'HP':<3} {'Inf':<4} Status")
     for p in game.state.players.values():
         if p.alive:
             status = "active"
             if p.id in game.state.winners:
                 status = "WINNER"
             if viewer and viewer.alive and p.id != viewer.id and game.in_range(viewer, p):
-                status += "  (in your range)"
+                status += "  (within your Influence)"
         else:
             status = f"destroyed day {p.eliminated_on_day} (was {p.owner_name})"
         mk = p.marker if p.alive else p.marker.lower()
@@ -65,10 +65,10 @@ def status(game: Game, p: Player) -> str:
         f"  Position: {game.pos(p)}",
         f"  HP:       {p.hp}",
         f"  AP:       {p.ap}   (private)",
-        f"  Range:    {game.range_of(p)}  (upgrades: {p.range_upgrades})",
+        f"  Influence: {game.range_of(p)}  (upgrades: {p.range_upgrades})",
     ]
     if p.alive:
-        lines.append(f"  Info:     {'purchased for today' if p.id in game.state.info_access else 'not purchased'}")
+        lines.append(f"  Spying:   {'yes, today' if p.id in game.state.info_access else 'no'}")
     else:
         vote = game.state.jury_votes.get(p.id)
         lines.append(f"  Vote:     {game.get(vote).state_name if vote else 'none cast'}")

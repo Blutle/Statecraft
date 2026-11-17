@@ -20,13 +20,13 @@ NO_PINGS = discord.AllowedMentions.none()
 HELP = """**Statecraft**: use the **control panel** at the bottom of your console. Conversations with other states open as private threads (✉️ Message a state). Every slash command below also works as a backup.
 **Before the game**: `/name` sets or changes your state's name · `/leave` withdraws
 **Actions** (2:00-8:00 PM Central, 15-minute cooldown after each, always confirmed first):
-Move 1 AP · Attack 1 AP · Upgrade 2 AP (range +1) · Gift (give AP to a state in range) · Buy info 1 AP (today's gifts until 8:15 PM)
-**Info** (free, any time): `/status` (you, or any state) · `/board` · `/info` · `/help` · `/panel` (re-post your panel)
+Move 1 AP · Attack 1 AP · Upgrade Influence 2 AP (+1) · Gift (give AP to a State within your Influence) · Spy 1 AP (today's Gift log until 8:15 PM)
+**Info** (free, any time): `/status` (you, or any State) · `/board` · `/spylog` · `/help` · `/panel` (re-post your panel)
 **Talk** (free, any time, works after elimination too): `/say` (#public-chat, under your state name) · `/dm` (another state's console) · `/anon` (#anonymous-chat, no name)
 **Jury** (after elimination): `/vote` 8:00 PM-1:45 PM, secret, changeable until the lock
 **Pings**: `/notify on|off` for minor events (moves, upgrades, info purchases)
 
-Range = horizontal + vertical steps (a diagonal step counts as 2). Everything you send the bot is logged for the post-game summary."""
+Influence: a straight step counts 1, a diagonal step counts 2. Everything you send the bot is logged for the post-game summary."""
 
 ARROWS = {"nw": "↖", "n": "↑", "ne": "↗", "w": "←", "e": "→", "sw": "↙", "s": "↓", "se": "↘"}
 DIRECTION_NAMES = {"n": "north", "ne": "north-east", "e": "east", "se": "south-east",
@@ -38,11 +38,11 @@ def public_status(game: Game, viewer_pid: str | None, target_pid: str) -> str:
     v = game.get(viewer_pid) if viewer_pid else None
     lines = [f"**{t.state_name}** [{t.marker}]"]
     if t.alive:
-        lines += [f"HP {t.hp} · Range {game.range_of(t)} · Position {game.pos(t)}"]
+        lines += [f"HP {t.hp} · Influence {game.range_of(t)} · Position {game.pos(t)}"]
         if v and v.alive and v.id != t.id:
             d = geometry.distance(v.x, v.y, t.x, t.y)
-            lines.append(f"Distance {d}: " + ("**you can reach it**" if game.in_range(v, t) else "out of your range")
-                         + " · " + ("**it can reach you**" if game.in_range(t, v) else "you're out of its range"))
+            lines.append(f"Distance {d}: " + ("**you can reach it**" if game.in_range(v, t) else "outside your Influence")
+                         + " · " + ("**it can reach you**" if game.in_range(t, v) else "you're outside its Influence"))
     else:
         lines.append(f"Destroyed on day {t.eliminated_on_day} at {game.pos(t)}. It was controlled by {t.owner_name}.")
     lines.append("*AP and cooldowns are private.*")
@@ -77,7 +77,7 @@ async def board_message(game: Game, focus: str | None = None, viewer: str | None
     emb = discord.Embed(colour=discord.Colour.dark_teal())
     emb.set_image(url="attachment://board.png")
     if public:
-        emb.description = "Pick a state in **Show range for…** to see its reach (only you will see the result)."
+        emb.description = "Pick a State in **Show Influence for…** to see its reach (only you will see the result)."
     return emb, discord.File(io.BytesIO(png), filename="board.png")
 
 
@@ -126,7 +126,7 @@ def _panel_card(game: Game, pid: str, now: datetime) -> discord.Embed:
         emb.colour = discord.Colour.gold() if won else discord.Colour.light_grey()
         return emb
     if p.alive:
-        lines = [f"**AP {p.ap}** · HP {p.hp} · Range {game.range_of(p)} · Position {game.pos(p)}"]
+        lines = [f"**AP {p.ap}** · HP {p.hp} · Influence {game.range_of(p)} · Position {game.pos(p)}"]
         left = game.cooldown_remaining(p, now)
         if left:
             lines.append(f"Cooldown: ready at **{schedule.fmt(now + left, s)}**")
@@ -137,10 +137,10 @@ def _panel_card(game: Game, pid: str, now: datetime) -> discord.Embed:
         else:
             lines.append(f"Actions: closed, open {schedule.fmt(schedule.next_at(now, s, 'window_open'), s)}")
         if pid in game.state.info_access:
-            lines.append(f"Info access: active until {schedule.fmt(schedule.info_expiry(now, s), s)}")
+            lines.append(f"Spying until {schedule.fmt(schedule.info_expiry(now, s), s)}")
         reach = [q for q in game.alive_players() if q.id != pid and game.in_range(p, q)]
         threats = [q for q in game.alive_players() if q.id != pid and game.in_range(q, p)]
-        lines.append("In your range: " + (", ".join(f"{q.marker} ({q.hp} HP)" for q in reach) or "nobody"))
+        lines.append("Within your Influence: " + (", ".join(f"{q.marker} ({q.hp} HP)" for q in reach) or "nobody"))
         lines.append("Can reach you: " + (", ".join(q.marker for q in threats) or "nobody"))
     else:
         emb.colour = discord.Colour.purple()
@@ -182,9 +182,9 @@ def action_card(ev, game: Game, now: datetime | None = None) -> discord.Embed:
     elif k == "MOVE":
         emb.description = f"🧭 {tag(d['pid'])} moved {d['from']} → **{d['to']}**"
     elif k == "UPGRADE":
-        emb.description = f"📡 {tag(d['pid'])} extended its range to **{d['range']}**"
+        emb.description = f"📡 {tag(d['pid'])} extended its Influence to **{d['range']}**"
     elif k == "INFO_PURCHASE":
-        emb.description = f"🔍 {tag(d['pid'])} bought information access"
+        emb.description = f"🕵️ {tag(d['pid'])} is spying"
     elif k == "DAILY_AP":
         emb.description = (f"🌅 **Day {d['day']} begins** · {d['alive']} states remain · "
                            f"each gains {d['amount']} AP · actions open until {_clock(s['window_close'])}")
@@ -270,7 +270,7 @@ def run_text(game: Game, pid: str, text: str, now: datetime) -> Result:
             return game.move(pid, args[0], now=now)
         if verb == "upgrade":
             return game.upgrade(pid, now=now)
-        if verb == "buyinfo":
+        if verb in ("spy", "buyinfo"):
             return game.buy_info(pid, now=now)
         if verb in ("attack", "vote") and args:
             tid, err = target(" ".join(args))
@@ -289,7 +289,7 @@ def run_text(game: Game, pid: str, text: str, now: datetime) -> Result:
             return _pact_text(game, pid, args[0].lower(), args[1:])
     except TypeError:
         pass
-    return Result.fail("Unknown command. Try: move ne | attack VE | upgrade | gift VE 2 | buyinfo | "
+    return Result.fail("Unknown command. Try: move ne | attack VE | upgrade | gift VE 2 | spy | "
                        "vote VE | say hi | dm VE hello | anon hi | pact create \"Name\" | "
                        "pact invite \"Name\" VE | pact accept \"Name\" | pact decline \"Name\" | "
                        "pact say \"Name\" hi | pact leave \"Name\" | pact kick \"Name\" VE")
