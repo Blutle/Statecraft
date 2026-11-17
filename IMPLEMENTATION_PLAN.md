@@ -320,6 +320,7 @@ These are the ways a living state's owner could be exposed. Each one needs to be
 | 1 | Does a player eliminated at 7 PM vote that same night? | **Yes.** |
 | 2 | Can a state gift AP to itself, or attack itself? | **No.** |
 | 3 | Does the info market show gifts made **earlier today**, before the purchase? | **Yes.** It shows all of the current active day. |
+| 5 | How is the top juror scored for the prize (votes for winner, rate, minimum nights, ties)? | *Pending, user deciding.* `juryscore` already shows votes, nights, and rate. |
 | 4 | Where will the bot be hosted (always-on PC, VPS, Docker)? | A local Windows process for development. Decide before the real game. |
 
 ---
