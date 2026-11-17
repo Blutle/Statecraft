@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Awaitable, Callable
 import discord
 
 from . import geometry
-from .discord_format import ARROWS, DIRECTION_NAMES, HELP, NO_PINGS, board_embed, own_status, panel_embed
+from .discord_format import ARROWS, DIRECTION_NAMES, HELP, NO_PINGS, board_message, own_status, panel_embed
 from .game import Game
 from .models import Result
 
@@ -295,6 +295,37 @@ class PactMenuView(discord.ui.View):
                                                       chose_pact))
 
 
+# --------------------------------------------------------------------- board
+
+class BoardRangeSelect(discord.ui.DynamicItem[discord.ui.Select], template=r"board:range"):
+    """'Show range for...' under every board image (public and private).
+    The answer is always private to whoever picked."""
+
+    def __init__(self, options: list[discord.SelectOption] | None = None):
+        super().__init__(discord.ui.Select(custom_id="board:range", placeholder="Show range for…",
+                                           options=options or [discord.SelectOption(label="(none)", value="none")]))
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls()
+
+    async def callback(self, interaction: discord.Interaction):
+        ui: UI = interaction.client.ui  # type: ignore[attr-defined]
+        values = (interaction.data or {}).get("values") or [None]
+        await ui.send_board(interaction, focus=values[0])
+
+
+def board_view(game: Game) -> discord.ui.View | None:
+    alive = sorted(game.alive_players(), key=lambda p: p.state_name.lower())
+    if not alive:
+        return None
+    options = [discord.SelectOption(label=f"{p.state_name}"[:100], value=p.id, description=f"{p.marker} · range "
+                                    f"{game.range_of(p)} · {game.pos(p)}") for p in alive[:25]]
+    view = discord.ui.View(timeout=None)
+    view.add_item(BoardRangeSelect(options))
+    return view
+
+
 # ---------------------------------------------------------- panel components
 
 class PanelButton(discord.ui.DynamicItem[discord.ui.Button], template=r"panel:b:(?P<what>[a-z_]+)"):
@@ -510,6 +541,23 @@ class UI:
 
         await self.ask(i, prompt + "\n**Confirm?**", go, ephemeral=ephemeral, edit=edit)
 
+    async def send_board(self, i: discord.Interaction, focus: str | None = None) -> None:
+        """Private board image for whoever asked: `focus` state's range tinted,
+        their own tile outlined, and red rings on states that can reach them."""
+        g = self.svc.game
+        if g.state.board_size == 0:
+            await i.response.send_message("The board appears when the game starts.", ephemeral=True)
+            return
+        viewer = str(i.user.id) if g.get(str(i.user.id)) else None
+        if focus is not None and not g.get(focus):
+            focus = None
+        await i.response.defer(ephemeral=True, thinking=True)
+        emb, file = await board_message(g, focus=focus, viewer=viewer)
+        kwargs = {"embed": emb, "file": file, "ephemeral": True}
+        if view := board_view(g):
+            kwargs["view"] = view
+        await i.followup.send(**kwargs)
+
     def ap_note(self, pid: str, cost: int) -> str:
         p = self.svc.game.get(pid)
         return f"Costs **{cost} AP** (you have {p.ap}) and starts your 15-minute cooldown."
@@ -643,10 +691,7 @@ class UI:
         elif what == "status":
             await i.response.send_message(own_status(g, pid, svc.now()), ephemeral=True)
         elif what == "board":
-            if g.state.board_size == 0:
-                await i.response.send_message("The board appears when the game starts.", ephemeral=True)
-            else:
-                await i.response.send_message(embed=board_embed(g, pid), ephemeral=True)
+            await self.send_board(i, focus=pid)
         elif what in ("say", "anon"):
             await i.response.send_modal(ChatModal(self, what))
         elif what == "pacts":

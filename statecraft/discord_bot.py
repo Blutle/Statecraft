@@ -22,10 +22,11 @@ from discord import app_commands
 from discord.ext import tasks
 
 from . import config, discord_setup, geometry, schedule
-from .discord_format import (HELP, NO_PINGS, board_embed, history_line, own_status, parse_duration, public_status,
+from .discord_format import (HELP, NO_PINGS, board_message, history_line, own_status, parse_duration, public_status,
                              run_text)
 from .discord_service import GameService
-from .discord_ui import UI, PactInviteButton, PanelButton, PanelSelect, ReplyButton, pact_summary
+from .discord_ui import (UI, BoardRangeSelect, PactInviteButton, PanelButton, PanelSelect, ReplyButton, board_view,
+                         pact_summary)
 from .models import Event, Result
 
 log = logging.getLogger("statecraft")
@@ -327,15 +328,16 @@ class Router:
         game = self.svc.game
         if not ch or game.state.board_size == 0:
             return
-        emb = board_embed(game)
+        emb, file = await board_message(game, public=True)
+        view = board_view(game) or discord.ui.View()          # an empty view clears the menu at game end
         mid = self.svc.server.get("board_message_id")
         if mid:
             try:
-                await ch.get_partial_message(mid).edit(embed=emb)
+                await ch.get_partial_message(mid).edit(embed=emb, attachments=[file], view=view)
                 return
             except discord.NotFound:
-                pass
-        msg = await ch.send(embed=emb, allowed_mentions=NO_PINGS)
+                emb, file = await board_message(game, public=True)
+        msg = await ch.send(embed=emb, file=file, view=view, allowed_mentions=NO_PINGS)
         self.svc.server["board_message_id"] = msg.id
         self.svc.save_server()
 
@@ -356,7 +358,7 @@ class StatecraftBot(discord.Client):
         register_commands(self)
 
     async def setup_hook(self):
-        self.add_dynamic_items(ReplyButton, PanelButton, PanelSelect, PactInviteButton)
+        self.add_dynamic_items(ReplyButton, PanelButton, PanelSelect, PactInviteButton, BoardRangeSelect)
         guild = discord.Object(self.cfg.guild_id)
         self.tree.copy_global_to(guild=guild)
         await self.tree.sync(guild=guild)
@@ -618,11 +620,8 @@ def register_commands(bot: StatecraftBot) -> None:
     async def board(i: discord.Interaction, state: str | None = None):
         if not (pid := await ui.console_pid(i)):
             return
-        if svc.game.state.board_size == 0:
-            await i.response.send_message("The board appears when the game starts.", ephemeral=True)
-            return
         focus = ui.resolve(state)[0] if state else pid
-        await i.response.send_message(embed=board_embed(svc.game, focus or pid), ephemeral=True)
+        await ui.send_board(i, focus=focus or pid)
 
     @tree.command(description="Re-show today's AP gifts (needs /buyinfo)")
     async def info(i: discord.Interaction):

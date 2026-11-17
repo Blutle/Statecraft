@@ -8,9 +8,6 @@ The Discord command reference. Update this file whenever a command is added, cha
   - Pacts: anonymous relayed channel copies, Accept/Decline invitations, the panel Pacts menu, and the `/pact` commands.
   - `/admin cleanup`.
 - **Not built yet:**
-  - The Pillow board image.
-  - The "Show range for…" dropdown.
-  - The red outline marking states that can reach you. In the meantime, the panel card lists which states can reach you, and `/board` shows your range as text.
   - `/admin open`. It isn't really needed: a new or reset game is already open for `/join`.
 
 Every command is a slash command. Replies are **private** (only the person who ran the command sees them) unless the table says something is posted publicly. Every command, including rejected attempts, is written to the game history log (see `IMPLEMENTATION_PLAN.md` §4b).
@@ -199,6 +196,20 @@ These let one person run a full game alone on the test server. They are disabled
 | After **every** visible action | Updates the #game-board message in place: the map plus the public stats table (HP, range, position, status). Each marker shows its state's range number so reach can be judged at a glance. The message has the same **"Show range for…" dropdown**, and picking a state shows the highlighted board **privately** to whoever picked it, so nobody's choice is visible. Gifts aren't visible, so they don't trigger an update. |
 | On elimination | Reveals the owner, grants `@Statecraft-Jury` (and access to #jury), and posts in #action-log. |
 | At game end | Announces the winner(s) and reveals their owners. |
+
+## The board image
+
+The board is a picture drawn by the bot, sized for phones:
+- **Tiles:** each state is a colored tile with its 3-letter abbreviation, HP dots, and a range badge on the corner. Destroyed states are greyed out with an ✕.
+- **Legend:** listed under the board, inside the image, so it never wraps.
+- **Contents:** public information only, which a test enforces. It never shows AP or the owner of a living state.
+
+**#game-board** shows the public board. It updates after every visible action and has a **Show range for…** menu.
+
+**Your board** (panel **Board** button, or `/board`):
+- The range shading defaults to yours, or to the state you name in `/board`.
+- Your tile has a **white outline**.
+- Every state that can reach you has a **red ring**, also marked "can reach you" in the legend.
 
 ## Range display (decided)
 

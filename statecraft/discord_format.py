@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
+import copy
+import io
 import re
 import shlex
 from datetime import datetime
 
 import discord
 
-from . import geometry, render_text, schedule
+from . import geometry, render_image, render_text, schedule
 from .game import Game
 from .models import Result
 
@@ -63,7 +66,23 @@ def own_status(game: Game, pid: str, now: datetime) -> str:
     return "```\n" + text + ("\n" + "\n".join(extra) if extra else "") + "\n```"
 
 
+async def board_message(game: Game, focus: str | None = None, viewer: str | None = None,
+                        public: bool = False) -> tuple[discord.Embed, discord.File]:
+    """The board image as an embed + attachment.
+
+    Rendered from a snapshot in a worker thread, so drawing never blocks
+    the bot and never sees a half-applied action."""
+    snap = Game(copy.deepcopy(game.state))
+    png = await asyncio.to_thread(render_image.render, snap, focus, viewer)
+    emb = discord.Embed(colour=discord.Colour.dark_teal())
+    emb.set_image(url="attachment://board.png")
+    if public:
+        emb.description = "Pick a state in **Show range for…** to see its reach (only you will see the result)."
+    return emb, discord.File(io.BytesIO(png), filename="board.png")
+
+
 def board_embed(game: Game, viewer_pid: str | None = None) -> discord.Embed:
+    """Text board (kept for reference; Discord uses board_message)."""
     viewer = game.get(viewer_pid) if viewer_pid else None
     text = render_text.board(game, viewer)
     return discord.Embed(title=f"Statecraft: Day {game.state.day}",
