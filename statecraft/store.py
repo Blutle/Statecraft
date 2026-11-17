@@ -55,6 +55,21 @@ class History:
             lines = f.readlines()[-n:]
         return [json.loads(line) for line in lines]
 
+    def records(self, keep=None, last: int | None = None) -> list[dict]:
+        """All records (optionally filtered by `keep(record) -> bool`), oldest
+        first; `last` keeps only the most recent N matches."""
+        if not self.path.exists():
+            return []
+        out = []
+        with self.path.open("r", encoding="utf-8") as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                rec = json.loads(line)
+                if keep is None or keep(rec):
+                    out.append(rec)
+        return out[-last:] if last else out
+
     def archive(self) -> Path | None:
         """Rename the current log aside (used when a game is reset)."""
         if not self.path.exists():

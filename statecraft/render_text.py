@@ -15,7 +15,7 @@ def board(game: Game, viewer: Player | None = None) -> str:
         return "The board does not exist until the game starts."
     rng = game.range_of(viewer) if viewer and viewer.alive else None
 
-    lines = ["    " + "".join(f"{geometry.column_label(x):<3}" for x in range(n))]
+    lines = ["    " + "".join(f"{geometry.column_label(x):<4}" for x in range(n))]
     for y in range(n):
         row = f"{y + 1:>2}  "
         for x in range(n):
@@ -26,7 +26,7 @@ def board(game: Game, viewer: Player | None = None) -> str:
                 cell = ":"
             else:
                 cell = "."
-            row += f"{cell:<3}"
+            row += f"{cell:<4}"
         lines.append(row.rstrip())
     if rng is not None:
         lines.append(f"\n':' = within range {rng} of {viewer.state_name} [{viewer.marker}]")
@@ -38,7 +38,7 @@ def board(game: Game, viewer: Player | None = None) -> str:
 def legend(game: Game, viewer: Player | None = None) -> str:
     """Public information only: no AP, and no owners of living states."""
     rows = [f"Day {game.state.day}  |  {len(game.alive_players())} states remaining", ""]
-    rows.append(f"  {'Mk':<3} {'State':<{_w(game)}} {'Pos':<4} {'HP':<3} {'Rng':<4} Status")
+    rows.append(f"  {'Abv':<4} {'State':<{_w(game)}} {'Pos':<4} {'HP':<3} {'Rng':<4} Status")
     for p in game.state.players.values():
         if p.alive:
             status = "active"
@@ -49,7 +49,7 @@ def legend(game: Game, viewer: Player | None = None) -> str:
         else:
             status = f"destroyed day {p.eliminated_on_day} (was {p.owner_name})"
         mk = p.marker if p.alive else p.marker.lower()
-        rows.append(f"  {mk:<3} {p.state_name:<{_w(game)}} {game.pos(p):<4} {p.hp:<3} {game.range_of(p):<4} {status}")
+        rows.append(f"  {mk:<4} {p.state_name:<{_w(game)}} {game.pos(p):<4} {p.hp:<3} {game.range_of(p):<4} {status}")
     return "\n".join(rows)
 
 

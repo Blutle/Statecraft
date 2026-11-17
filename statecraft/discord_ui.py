@@ -121,14 +121,21 @@ class ReplyButton(discord.ui.DynamicItem[discord.ui.Button], template=r"dmreply:
 class NameModal(discord.ui.Modal, title="Name your state"):
     name = discord.ui.TextInput(label="State name (up to 40 characters)", max_length=40,
                                 placeholder="e.g. The Iron Dominion")
+    abbreviation = discord.ui.TextInput(label="3-letter abbreviation (shown on the board)", min_length=3,
+                                        max_length=3, required=False, placeholder="e.g. IRN (blank = automatic)")
 
-    def __init__(self, ui: "UI"):
+    def __init__(self, ui: "UI", current=None):
         super().__init__()
         self.ui = ui
+        if current:                                   # renaming: start from the current values
+            self.name.default = current.state_name
+            self.abbreviation.default = current.marker
 
     async def on_submit(self, interaction: discord.Interaction):
         pid, value = str(interaction.user.id), str(self.name.value)
-        res = await self.ui.svc.run(lambda g, now: g.register(interaction.user.display_name, value, pid=pid))
+        abbr = str(self.abbreviation.value or "").strip() or None
+        res = await self.ui.svc.run(lambda g, now: g.register(interaction.user.display_name, value, pid=pid,
+                                                              abbreviation=abbr))
         await self.ui.reply(interaction, res, ephemeral=True)
 
 
@@ -623,7 +630,7 @@ class UI:
             if g.state.phase != "registration":
                 await i.response.send_message("The game has started; names are final.", ephemeral=True)
                 return
-            await i.response.send_modal(NameModal(self))
+            await i.response.send_modal(NameModal(self, g.get(pid)))
             return
         if what == "help":
             await i.response.send_message(HELP, ephemeral=True)

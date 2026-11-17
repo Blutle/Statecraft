@@ -23,6 +23,7 @@ from .models import Event, GameState, Player, Result
 
 STOPWORDS = {"the", "of", "and", "a", "an", "de", "la", "le", "du", "von", "van"}
 MAX_NAME_LEN = 40
+ABBREV_LEN = 3
 MAX_MESSAGE_LEN = 1500
 
 
@@ -115,10 +116,12 @@ class Game:
     # ------------------------------------------------------------- lifecycle
 
     @recorded("register")
-    def register(self, owner_name: str, state_name: str, pid: str | None = None) -> Result:
+    def register(self, owner_name: str, state_name: str, pid: str | None = None,
+                 abbreviation: str | None = None) -> Result:
         """Register a player. `pid` is the Discord user id (the CLI omits it
         and gets p1, p2, ...). Registering again with the same pid before the
-        game starts renames the state."""
+        game starts renames the state. `abbreviation` is the player's chosen
+        3-letter board marker; if omitted, one is made from the state name."""
         if self.state.phase != "registration":
             return Result.fail("Registration is closed; the game has already started.")
         owner_name = owner_name.strip()
@@ -130,6 +133,16 @@ class Game:
         if any(c in state_name for c in "@#<>`*_~|\\"):
             return Result.fail("State names can't contain @ # < > ` * _ ~ | or backslashes.")
         existing = self.state.players.get(pid) if pid else None
+        if abbreviation is not None and abbreviation.strip():
+            abbreviation = abbreviation.strip().upper()
+            if not (len(abbreviation) == ABBREV_LEN and abbreviation.isascii() and abbreviation.isalpha()):
+                return Result.fail(f"Abbreviations must be exactly {ABBREV_LEN} letters (A-Z).")
+            taken_by = next((p for p in self.state.players.values()
+                             if p.marker == abbreviation and p is not existing), None)
+            if taken_by:
+                return Result.fail(f"The abbreviation {abbreviation} is already taken.")
+        else:
+            abbreviation = None
         for p in self.state.players.values():
             if p is existing:
                 continue
@@ -139,11 +152,15 @@ class Game:
                 return Result.fail(f"Player '{owner_name}' already controls {p.state_name}.")
         if existing:
             old = existing.state_name
+            renamed = old != state_name
             existing.state_name = state_name
             existing.owner_name = owner_name
-            existing.marker = ""
-            existing.marker = self._make_marker(state_name)
-            return Result(True, f"Renamed {old} to {state_name} [{existing.marker}].",
+            if abbreviation:
+                existing.marker = abbreviation
+            elif renamed or not existing.marker:
+                existing.marker = ""
+                existing.marker = self._make_marker(state_name)
+            return Result(True, f"Your state is now **{state_name}**, shown on the board as **{existing.marker}**.",
                           data_event("RENAME", pid=pid))
 
         auto_id = pid is None
@@ -154,14 +171,14 @@ class Game:
             id=pid,
             owner_name=owner_name,
             state_name=state_name,
-            marker=self._make_marker(state_name),
+            marker=abbreviation or self._make_marker(state_name),
             hp=self.s["starting_hp"],
         )
         self.state.players[pid] = player
         if auto_id:  # CLI: show the id used with `as`
             return Result(True, f"{owner_name} registered {state_name} [{player.marker}] as {pid}.")
-        return Result(True, f"Your state is **{state_name}**, marker [{player.marker}] on the board. "
-                            f"You can rename it with `/name` until the game starts.")
+        return Result(True, f"Your state is **{state_name}**, shown on the board as **{player.marker}**. "
+                            f"You can change either with `/name` (or your panel) until the game starts.")
 
     @recorded("unregister")
     def unregister(self, pid: str) -> Result:
@@ -173,22 +190,27 @@ class Game:
         return Result(True, f"Removed {p.state_name}.")
 
     def _make_marker(self, state_name: str) -> str:
+        """A unique 3-letter abbreviation from the state name, used when the
+        player doesn't choose one (e.g. 'The Iron Dominion' -> IDO)."""
         taken = {p.marker for p in self.state.players.values()}
         words = [w for w in state_name.split() if w.lower() not in STOPWORDS] or state_name.split()
-        letters = [c for c in "".join(words) if c.isalnum()]
+        words = ["".join(c for c in w if c.isascii() and c.isalpha()) for w in words]
+        words = [w for w in words if w] or ["X"]
+        letters = "".join(words)
         candidates = []
+        if len(words) >= 3:
+            candidates.append(words[0][0] + words[1][0] + words[2][0])
         if len(words) >= 2:
-            candidates.append(words[0][0] + words[1][0])
-        if len(letters) >= 2:
-            candidates.append(letters[0] + letters[1])
-        first = letters[0] if letters else "X"
-        candidates += [first + c for c in "23456789"]
-        candidates += [a + b for a in "ABCDEFGHIJKLMNOPQRSTUVWXYZ" for b in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"]
+            candidates += [words[0][0] + words[1][:2], words[0][:2] + words[1][0]]
+        candidates.append(letters[:3])
+        first = letters[0]
+        candidates += [first + a + b for a in letters[1:] for b in letters[2:]]
+        candidates += [first + a + b for a in "ABCDEFGHIJKLMNOPQRSTUVWXYZ" for b in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"]
         for c in candidates:
             c = c.upper()
-            if c not in taken:
+            if len(c) == ABBREV_LEN and c not in taken:
                 return c
-        raise RuntimeError("Ran out of markers")
+        raise RuntimeError("Ran out of abbreviations")
 
     def auto_board_size(self, n: int) -> int:
         """board_scale_pct of the player count, rounded down (75% -> 16 players

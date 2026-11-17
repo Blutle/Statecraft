@@ -30,7 +30,7 @@ Every command is a slash command. Replies are **private** (only the person who r
 - An action that would fail anyway (out of range, on cooldown, not enough AP, window closed) is rejected immediately, with no prompt. The rejected attempt is still logged.
 - The action runs at the moment **Yes** is clicked. The window, cooldown, and range are checked again then.
 
-**Targets:** commands that take a state autocomplete from state names as you type. You can type the name, the start of it, or its board marker (e.g. `VE`).
+**Targets:** commands that take a state autocomplete from state names as you type. You can type the name, the start of it, or its 3-letter abbreviation (e.g. `VEY`).
 
 ---
 
@@ -51,7 +51,7 @@ Every console has a **control panel** that always sits at the **bottom** of the 
 
 | Panel control | What it does |
 |---|---|
-| **Name my state / Rename my state** (before the game) | Opens a text box to set or change your state name. |
+| **Name my state / Rename my state** (before the game) | Opens a box for your state name and 3-letter abbreviation. When renaming, it starts filled in with your current values. |
 | **Choose an action…** menu (living states) | **Move** opens a 3×3 arrow grid, with blocked and off-board squares greyed out. **Attack** and **Gift AP** list only the states in your range (gift then asks for an amount). **Upgrade range** and **Buy info** go straight to confirmation. Every choice ends in **Yes / Cancel**. |
 | **Choose an action…** menu (jurors) | **Vote** lists the surviving states. |
 | **Status** / **Board** | Your full status, or the board with your range marked, shown privately. |
@@ -68,7 +68,7 @@ Your state name is only ever typed in your **private console**, never in #regist
 | Command | Where | What it does |
 |---|---|---|
 | `/join` | #register | Creates your private console (a random name like `#console-7f3a`, visible only to you, the bot, and the admin), pins your control panel there, and gives you `@Statecraft-Players`. The reply is private. |
-| `/name name:<state name>` | your console | Sets your state's name, or renames it. You can rename any time before the game starts. Names must be unique, up to 40 characters, and can't contain @, #, <, >, backticks, asterisks, underscores, tildes, pipes, or backslashes. |
+| `/name name:<state name> [abbreviation:<ABC>]` | your console | Sets your state's name and its **3-letter abbreviation** (the board marker, letters only, unique; leave it out and one is made from the name), or changes them. You can rename any time before the game starts. Names must be unique, up to 40 characters, and can't contain @, #, <, >, backticks, asterisks, underscores, tildes, pipes, or backslashes. |
 | `/leave` | anywhere | (Yes/Cancel) Withdraws before the game starts, removes your role, and deletes your console. |
 
 `/admin start` refuses to start while anyone has joined but not named a state.
@@ -167,6 +167,8 @@ Jury discussion happens in #jury. It's normal chat, not a command.
 | `/admin status` | Full view: phase, day, and every state with its owner, AP, HP, position, and cooldown. Also shows tonight's ballots and anyone with info access. |
 | `/admin give state:<state> amount:<n>` | Adds or removes AP (negative amount). Logged. |
 | `/admin declare states:<states>` | (Yes/Cancel) Ends the game with one or more joint winners, for a draw agreed outside the game. Reveals the winners. |
+| `/admin consoles` | Every state with its owner and clickable links to their console, conversation threads, and pact channels. Consoles have random names, so this is how you find them. (As server owner you can open all of them. Anyone else with Administrator or Manage Threads can too, so keep those roles to yourself.) |
+| `/admin log [state:<state>] [count:<n>]` | The most recent history-log entries (20 by default, up to 60) for one state or for everyone. Covers actions (rejected ones marked ✗), messages, pact messages, and anonymous posts, **with the real author**. |
 | `/admin juryscore` | After the game: ranks jurors by votes for the winner(s), with ballots, nights, and rate. |
 | `/admin reload` | Reloads `game.json` after you edit it by hand. |
 | `/admin reset` | (Yes/Cancel) Wipes the game for a fresh one. The old history log is kept under a timestamped name. |

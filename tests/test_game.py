@@ -111,9 +111,38 @@ class LifecycleTests(unittest.TestCase):
         res = g.register("Greg", "Iron Dominion", pid="111")             # /join again renames
         self.assertTrue(res.ok)
         self.assertEqual(g.get("111").state_name, "Iron Dominion")
-        self.assertEqual(g.get("111").marker, "ID")
+        self.assertEqual(g.get("111").marker, "IDO")
         self.assertEqual(len(g.state.players), 2)
         self.assertTrue(g.register("Greg", "Iron Dominion", pid="111").ok)  # same name is fine
+
+    def test_chosen_abbreviations(self):
+        g = Game()
+        self.assertTrue(g.register("a", "Westhaven", pid="1", abbreviation="wst").ok)
+        self.assertEqual(g.get("1").marker, "WST")                       # stored uppercase
+        self.assertFalse(g.register("b", "Kesh", pid="2", abbreviation="WST").ok)   # taken
+        for bad in ("WS", "WEST", "W5T", "W T", "ÄBC"):
+            self.assertFalse(g.register("b", "Kesh", pid="2", abbreviation=bad).ok, bad)
+        self.assertNotIn("2", g.state.players)                           # rejected = nothing registered
+        self.assertTrue(g.register("b", "Kesh", pid="2").ok)             # blank -> generated
+        self.assertEqual(len(g.get("2").marker), 3)
+        # Renaming keeps a chosen abbreviation unless a new one is given
+        self.assertTrue(g.register("a", "New Westhaven", pid="1").ok)
+        self.assertEqual(g.get("1").marker, "NWE")
+        self.assertTrue(g.register("a", "New Westhaven", pid="1", abbreviation="NEW").ok)
+        self.assertEqual(g.get("1").marker, "NEW")
+        self.assertTrue(g.register("a", "New Westhaven", pid="1").ok)    # same name, no abbreviation
+        self.assertEqual(g.get("1").marker, "NEW")
+        p, _ = g.find("new")
+        self.assertEqual(p.id, "1")
+
+    def test_generated_abbreviations_unique_and_three_letters(self):
+        g = Game()
+        for i, name in enumerate(["The Iron Dominion", "Iron Dominion", "Iron Domain", "Kesh", "K", "Ke",
+                                  "Republic of Aldren", "Free Cities of the North", "Ünïcode Land"]):
+            self.assertTrue(g.register(f"u{i}", name, pid=str(i)).ok, name)
+        marks = [p.marker for p in g.state.players.values()]
+        self.assertEqual(len(set(marks)), len(marks))
+        self.assertTrue(all(len(m) == 3 and m.isalpha() and m.isascii() for m in marks), marks)
 
     def test_state_names_reject_discord_markup(self):
         g = Game()

@@ -22,7 +22,7 @@ from discord import app_commands
 from discord.ext import tasks
 
 from . import config, discord_setup, geometry, schedule
-from .discord_format import (HELP, NO_PINGS, board_embed, own_status, parse_duration, public_status,
+from .discord_format import (HELP, NO_PINGS, board_embed, history_line, own_status, parse_duration, public_status,
                              run_text)
 from .discord_service import GameService
 from .discord_ui import UI, PactInviteButton, PanelButton, PanelSelect, ReplyButton, pact_summary
@@ -494,10 +494,13 @@ def register_commands(bot: StatecraftBot) -> None:
                                                overwrites=overwrites, reason="Statecraft console")
 
     @tree.command(description="Name (or rename) your state before the game starts")
-    @app_commands.describe(name="Your state's name, up to 40 characters")
-    async def name(i: discord.Interaction, name: app_commands.Range[str, 1, 40]):
+    @app_commands.describe(name="Your state's name, up to 40 characters",
+                           abbreviation="3 letters shown on the board, e.g. IRN (leave out for automatic)")
+    async def name(i: discord.Interaction, name: app_commands.Range[str, 1, 40],
+                   abbreviation: app_commands.Range[str, 3, 3] | None = None):
         if pid := await ui.console_pid(i, need_state=False):
-            await ui.reply(i, await svc.run(lambda g, now: g.register(i.user.display_name, name, pid=pid)))
+            await ui.reply(i, await svc.run(lambda g, now: g.register(i.user.display_name, name, pid=pid,
+                                                                      abbreviation=abbreviation)))
 
     @tree.command(description="Re-post your control panel at the bottom of your console")
     async def panel(i: discord.Interaction):
@@ -847,6 +850,87 @@ def register_commands(bot: StatecraftBot) -> None:
         lines = [f"{r['player'].owner_name[:16]:<16} {r['player'].state_name[:22]:<22} for winner {r['for_winner']:>2}"
                  f"  ballots {r['ballots']:>2}  nights {r['nights']:>2}  rate {r['rate']:.0%}" for r in rows]
         await i.response.send_message("```\n" + "\n".join(lines)[:1900] + "\n```", ephemeral=True)
+
+    @admin.command(description="Every state's owner, console, conversation threads, and pact channels")
+    async def consoles(i: discord.Interaction):
+        if not await admin_only(i):
+            return
+        g = svc.game
+        pact_copies: dict[str, list[str]] = {}
+        for pact_id, copies in svc.pact_channels().items():
+            pc = g.state.pacts.get(pact_id)
+            for pid, rec in copies.items():
+                pact_copies.setdefault(pid, []).append(f"<#{rec['channel']}> ({pc['name'] if pc else pact_id})")
+        fields = []
+        for pid in list(dict.fromkeys(list(svc.server.get("consoles", {})) + list(g.state.players))):
+            p = g.get(pid)
+            title = f"{p.state_name} [{p.marker}]" if p else "(joined, not named yet)"
+            if p and not p.alive:
+                title += " · destroyed"
+            if svc.is_fake(pid):
+                fields.append((title, f"Test player ({p.owner_name if p else pid}); no console"))
+                continue
+            cid = svc.console_of(pid)
+            lines = [f"Owner: <@{pid}> ({p.owner_name if p else 'unnamed'})",
+                     f"Console: {f'<#{cid}>' if cid else 'none'}"]
+            dms = svc.server.get("dm_threads", {}).get(pid, {})
+            if dms:
+                lines.append("DMs: " + ", ".join(f"<#{t}> ({g.get(o).state_name if g.get(o) else o})"
+                                                 for o, t in dms.items()))
+            if pid in pact_copies:
+                lines.append("Pacts: " + ", ".join(pact_copies[pid]))
+            value = "\n".join(lines)
+            fields.append((title, value if len(value) <= 1024 else value[:1020] + "…"))
+        if not fields:
+            await i.response.send_message("Nobody has joined yet.", ephemeral=True)
+            return
+        embeds = []
+        for start in range(0, len(fields), 8):                  # stay well under Discord's embed limits
+            emb = discord.Embed(title="Consoles" if not embeds else None, colour=discord.Colour.dark_grey())
+            for name, value in fields[start:start + 8]:
+                emb.add_field(name=name[:256], value=value, inline=False)
+            embeds.append(emb)
+        await i.response.send_message(embeds=embeds[:1], ephemeral=True, allowed_mentions=NO_PINGS)
+        for emb in embeds[1:]:
+            await i.followup.send(embed=emb, ephemeral=True, allowed_mentions=NO_PINGS)
+
+    @admin.command(description="Recent history log entries, for one state or everyone")
+    @app_commands.autocomplete(state=any_states)
+    @app_commands.describe(state="Leave out for everyone", count="How many entries (default 20, max 60)")
+    async def log(i: discord.Interaction, state: str | None = None,
+                  count: app_commands.Range[int, 1, 60] = 20):
+        if not await admin_only(i):
+            return
+        pid = None
+        if state:
+            pid, err = ui.resolve(state)
+            if not pid:
+                await i.response.send_message(f"Rejected: {err}", ephemeral=True)
+                return
+
+        def keep(rec):
+            if pid is None:
+                return True
+            ids = {(rec.get("actor") or {}).get("id"), (rec.get("target") or {}).get("id")}
+            return pid in ids
+
+        lines = [history_line(r, svc.game) for r in svc.history.records(keep, last=count)]
+        if not lines:
+            await i.response.send_message("No matching history yet.", ephemeral=True)
+            return
+        title = f"History: {svc.game.get(pid).state_name}" if pid else "History: everyone"
+        chunks, cur = [], ""
+        for line in lines:
+            if len(cur) + len(line) + 1 > 3900:
+                chunks.append(cur)
+                cur = ""
+            cur += line + "\n"
+        chunks.append(cur)
+        embeds = [discord.Embed(title=title if n == 0 else None, description=c, colour=discord.Colour.dark_grey())
+                  for n, c in enumerate(chunks)]
+        await i.response.send_message(embeds=embeds[:1], ephemeral=True, allowed_mentions=NO_PINGS)
+        for emb in embeds[1:]:
+            await i.followup.send(embed=emb, ephemeral=True, allowed_mentions=NO_PINGS)
 
     @admin.command(description="Reload game.json after editing it by hand")
     async def reload(i: discord.Interaction):

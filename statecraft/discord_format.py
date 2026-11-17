@@ -135,6 +135,31 @@ def _panel_card(game: Game, pid: str, now: datetime) -> discord.Embed:
     return emb
 
 
+def history_line(rec: dict, game: Game) -> str:
+    """One history record as a short line for the referee (/admin log)."""
+    s = game.s
+    when = schedule.fmt(datetime.fromisoformat(rec["time"]), s) if rec.get("time") else "?"
+    who = rec["actor"]["state"] if rec.get("actor") else "system"
+    target = f" → {rec['target']['state']}" if rec.get("target") else ""
+    args = rec.get("args", {})
+    detail = ""
+    if "text" in args:
+        detail = f': "{args["text"][:150]}"'
+    elif "direction" in args:
+        detail = f" {args['direction']}"
+    elif "amount" in args:
+        detail = f" {args['amount']} AP"
+    elif "state_name" in args:
+        detail = f" {args['state_name']}" + (f" [{args['abbreviation']}]" if args.get("abbreviation") else "")
+    elif "name" in args:
+        detail = f" {args['name']}"
+    if "pact_id" in args:
+        pc = game.state.pacts.get(args["pact_id"])
+        detail = f" in {pc['name'] if pc else args['pact_id']}" + detail
+    status = "" if rec.get("ok") else f" ✗ *{rec.get('result', '')[:80]}*"
+    return f"`{when}` **{who}** {rec['action']}{target}{detail}{status}"
+
+
 def _clock(hhmm: str) -> str:
     h, m = (int(x) for x in hhmm.split(":"))
     return f"{(h - 1) % 12 + 1}:{m:02d} {'AM' if h < 12 else 'PM'}"

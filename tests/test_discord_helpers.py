@@ -66,6 +66,34 @@ class FormattingTests(unittest.TestCase):
         self.assertIn("Cooldown: 10m", text)
 
 
+class AdminLogTests(unittest.TestCase):
+    def test_history_filter_and_lines(self):
+        import tempfile
+        from pathlib import Path
+        from statecraft import store
+        from statecraft.discord_format import history_line
+        with tempfile.TemporaryDirectory() as d:
+            hist = store.History(Path(d) / "g.history.jsonl")
+            g = Game(rng=random.Random(2), recorder=hist.append)
+            for i, name in enumerate(["Westhaven", "Veyran Empire", "Kesh"]):
+                g.register(f"User{i}", name, pid=f"fake{i + 1}")
+            g.start(force=True)
+            g.anon("fake2", "Westhaven is lying")
+            g.dm("fake1", "fake3", "secret deal?")
+            g.move("fake3", "n")                                  # rejected: no AP
+            pact = g.create_pact("fake1", "Iron Accord").events[0].data["pact"]
+            g.pact_message("fake1", pact, "first pact message")
+            mine = hist.records(lambda r: "fake1" in {(r.get("actor") or {}).get("id"),
+                                                      (r.get("target") or {}).get("id")})
+            self.assertEqual([r["action"] for r in mine], ["register", "dm", "pact_create", "pact_message"])
+            lines = [history_line(r, g) for r in hist.records()]
+            anon = next(l for l in lines if " anon" in l)
+            self.assertIn("**Veyran Empire**", anon)              # the referee sees the real author
+            self.assertIn("✗", next(l for l in lines if " move" in l))
+            self.assertIn("in Iron Accord", next(l for l in lines if "pact_message" in l))
+            self.assertEqual(len(hist.records(last=2)), 2)
+
+
 class DurationTests(unittest.TestCase):
     def test_parse(self):
         self.assertEqual(parse_duration("+2h"), 7200)
