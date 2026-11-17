@@ -5,7 +5,8 @@ The Discord command reference. Update this file whenever a command is added, cha
 **Build status (2026-11-17):**
 - **Built:**
   - Registration: `/join` (console only), `/name` (set or rename), and `/leave`.
-  - All gameplay actions, `/status` (own and other states), `/board` (text version), `/info`, `/help`, `/notify`, `/say`, `/dm` with the Reply pop-up, `/anon`, `/vote`.
+  - **The control panel** (action menu, move grid, target and amount menus, chat text boxes, live status card).
+  - All gameplay actions, `/status` (own and other states), `/board` (text version), `/info`, `/help`, `/panel`, `/notify`, `/say`, `/dm` with the Reply pop-up, `/anon`, `/vote`.
   - Admin: `setup`, `start`, `status`, `give`, `declare`, `juryscore`, `reload`, `reset`.
   - Every test-mode command.
   - The automatic scheduler and the #game-board auto-update.
@@ -31,13 +32,34 @@ Every command is a slash command. Replies are **private** (only the person who r
 
 ---
 
+## Control panel (the main way to play, built for phones)
+
+Every console has a **control panel** pinned at the top: a status card plus a menu and buttons. Each panel choice runs exactly the same game action, confirmation, and logging as the matching slash command below. The slash commands are a backup.
+
+**Status card:**
+- **Living states:** AP, HP, range, and position; when your cooldown is ready; whether actions are open; info access; which states you can reach; and which states can reach you.
+- **Jurors:** your current vote and whether voting is open.
+- **Updates:** the card refreshes after every change to the game, and on demand with **Refresh**.
+
+| Panel control | What it does |
+|---|---|
+| **Name my state / Rename my state** (before the game) | Opens a text box to set or change your state name. |
+| **Choose an action…** menu (living states) | **Move** opens a 3×3 arrow grid, with blocked and off-board squares greyed out. **Attack** and **Gift AP** list only the states in your range (gift then asks for an amount). **Upgrade range** and **Buy info** go straight to confirmation. Every choice ends in **Yes / Cancel**. |
+| **Choose an action…** menu (jurors) | **Vote** lists the surviving states. |
+| **Status** / **Board** | Your full status, or the board with your range marked, shown privately. |
+| **Public chat** / **Anonymous** | Opens a text box and posts to #public-chat (under your state name) or #anonymous-chat (no name). |
+| **Message a state** | Pick any state, then type in a text box. They get it in their console, with a Reply button. |
+| **Refresh** / **Help** | Updates the card / shows the command list. |
+
+The menus that open from the panel (direction grid, target list, confirmation) are private to you and expire after 2 minutes. If the panel ever goes missing, `/panel` posts a fresh one.
+
 ## Registration (before the game starts)
 
 Your state name is only ever typed in your **private console**, never in #register. If a slash command misfires (say, Enter is pressed before Discord picks up the command), the text posts as an ordinary chat message, so `/join` takes no name.
 
 | Command | Where | What it does |
 |---|---|---|
-| `/join` | #register | Creates your private console (a random name like `#console-7f3a`, visible only to you, the bot, and the admin) and gives you `@Statecraft-Players`. The reply is private. |
+| `/join` | #register | Creates your private console (a random name like `#console-7f3a`, visible only to you, the bot, and the admin), pins your control panel there, and gives you `@Statecraft-Players`. The reply is private. |
 | `/name name:<state name>` | your console | Sets your state's name, or renames it. You can rename any time before the game starts. Names must be unique, up to 40 characters, and can't contain @, #, <, >, backticks, asterisks, underscores, tildes, pipes, or backslashes. |
 | `/leave` | anywhere | (Yes/Cancel) Withdraws before the game starts, removes your role, and deletes your console. |
 
@@ -65,6 +87,7 @@ Each action is allowed only **2:00–8:00 PM Central** and starts your **15-minu
 | `/board state:<state>` | The same board, starting with that state's range highlighted. |
 | `/info` | Re-shows today's gift report, if you've bought info. |
 | `/help` | The command list and a short rules summary. |
+| `/panel` | Re-posts your control panel (if it's missing or buried). |
 
 ## Communication (console only, free, any time, no cooldown)
 

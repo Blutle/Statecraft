@@ -2,36 +2,34 @@
 
 Run with:  py -m statecraft.discord_bot      (or run_bot.bat)
 
-Layers: commands here -> GameService (lock + save) -> Game engine (rules +
-history). The engine returns Events; `Router.deliver` sends them to the
-right channel, console, or webhook. Nothing reaches players except through
-an engine call, so everything is in the history log.
+Layers: slash commands and the control panel (discord_ui) -> GameService
+(lock + save) -> Game engine (rules + history). The engine returns Events;
+`Router.deliver` sends them to the right channel, console, or webhook.
+Nothing reaches players except through an engine call, so everything is in
+the history log.
 
 Commands are documented in COMMANDS.md; keep the two in sync.
 """
 
 from __future__ import annotations
 
-import copy
 import logging
-import re
 import secrets
-import shlex
-from datetime import datetime, timedelta
-from typing import Awaitable, Callable
+from datetime import timedelta
 
 import discord
 from discord import app_commands
 from discord.ext import tasks
 
-from . import config, discord_setup, geometry, render_text, schedule
+from . import config, discord_setup, geometry, schedule
+from .discord_format import (HELP, NO_PINGS, board_embed, own_status, parse_duration, public_status,
+                             run_text)
 from .discord_service import GameService
-from .game import Game
+from .discord_ui import UI, PanelButton, PanelSelect, ReplyButton
 from .models import Event, Result
 
 log = logging.getLogger("statecraft")
 
-NO_PINGS = discord.AllowedMentions.none()
 PUBLIC_KINDS_PLAYERS_PING = {"ATTACK", "ELIMINATION", "GAME_OVER", "GAME_START"}
 PUBLIC_KINDS_UPDATES_PING = {"MOVE", "UPGRADE", "INFO_PURCHASE"}
 BOARD_CHANGING = {"GAME_START", "MOVE", "ATTACK", "ELIMINATION", "UPGRADE", "DAILY_AP",
@@ -39,185 +37,6 @@ BOARD_CHANGING = {"GAME_START", "MOVE", "ATTACK", "ELIMINATION", "UPGRADE", "DAI
 DIRECTIONS = [app_commands.Choice(name=n, value=v) for n, v in [
     ("North (up)", "n"), ("North-east", "ne"), ("East (right)", "e"), ("South-east", "se"),
     ("South (down)", "s"), ("South-west", "sw"), ("West (left)", "w"), ("North-west", "nw")]]
-
-HELP = """**Statecraft commands** (use them here in your console)
-**Before the game**: `/name` sets or changes your state's name · `/leave` withdraws
-**Actions** (2:00-8:00 PM Central, 15-minute cooldown after each):
-`/move` 1 AP · `/attack` 1 AP · `/upgrade` 2 AP (range +1) · `/gift` (give AP to a state in range) · `/buyinfo` 1 AP (see today's gifts until 8:15 PM)
-**Info** (free, any time): `/status` (you, or any state) · `/board` · `/info` · `/help`
-**Talk** (free, any time, works after elimination too): `/say` (#public-chat, under your state name) · `/dm` (another state's console) · `/anon` (#anonymous-chat, no name)
-**Jury** (after elimination): `/vote` 8:00 PM-1:45 PM, secret, changeable until the lock
-**Pings**: `/notify on|off` for minor events (moves, upgrades, info purchases)
-
-Range = horizontal + vertical steps (a diagonal step counts as 2). Everything you send the bot is logged for the post-game summary."""
-
-
-# --------------------------------------------------------------- formatting
-
-def public_status(game: Game, viewer_pid: str | None, target_pid: str) -> str:
-    t = game.get(target_pid)
-    v = game.get(viewer_pid) if viewer_pid else None
-    lines = [f"**{t.state_name}** [{t.marker}]"]
-    if t.alive:
-        lines += [f"HP {t.hp} · Range {game.range_of(t)} · Position {game.pos(t)}"]
-        if v and v.alive and v.id != t.id:
-            d = geometry.distance(v.x, v.y, t.x, t.y)
-            lines.append(f"Distance {d}: " + ("**you can reach it**" if game.in_range(v, t) else "out of your range")
-                         + " · " + ("**it can reach you**" if game.in_range(t, v) else "you're out of its range"))
-    else:
-        lines.append(f"Destroyed on day {t.eliminated_on_day} at {game.pos(t)}. It was controlled by {t.owner_name}.")
-    lines.append("*AP and cooldowns are private.*")
-    return "\n".join(lines)
-
-
-def own_status(game: Game, pid: str, now: datetime) -> str:
-    p = game.get(pid)
-    s = game.s
-    text = render_text.status(game, p)
-    extra = []
-    if p.alive and game.state.phase == "active":
-        left = game.cooldown_remaining(p, now)
-        extra.append(f"  Cooldown: {'ready' if not left else schedule.fmt_duration(left)}")
-        if schedule.window_open(now, s):
-            extra.append(f"  Window:   OPEN until {s['window_close']}")
-        else:
-            extra.append(f"  Window:   closed, opens {schedule.fmt(schedule.next_at(now, s, 'window_open'), s)}")
-    elif not p.alive and game.state.phase == "active":
-        extra.append("  Voting:   " + ("open" if schedule.voting_open(now, s) else f"locked until {s['window_close']}"))
-    return "```\n" + text + ("\n" + "\n".join(extra) if extra else "") + "\n```"
-
-
-def board_embed(game: Game, viewer_pid: str | None = None) -> discord.Embed:
-    viewer = game.get(viewer_pid) if viewer_pid else None
-    text = render_text.board(game, viewer)
-    emb = discord.Embed(title=f"Statecraft: Day {game.state.day}",
-                        description=f"```\n{text[:3900]}\n```", colour=discord.Colour.dark_teal())
-    return emb
-
-
-def run_text(game: Game, pid: str, text: str, now: datetime) -> Result:
-    """Console commands as plain text (used by /test as)."""
-    try:
-        parts = shlex.split(text)
-    except ValueError:
-        parts = text.split()
-    if not parts:
-        return Result.fail("No command given.")
-    verb, args = parts[0].lower().lstrip("/"), parts[1:]
-
-    def target(q: str):
-        p, err = game.find(q)
-        return (p.id, "") if p else (None, err)
-
-    try:
-        if verb == "move" and len(args) == 1:
-            return game.move(pid, args[0], now=now)
-        if verb == "upgrade":
-            return game.upgrade(pid, now=now)
-        if verb == "buyinfo":
-            return game.buy_info(pid, now=now)
-        if verb in ("attack", "vote") and args:
-            tid, err = target(" ".join(args))
-            if not tid:
-                return Result.fail(err)
-            return (game.attack if verb == "attack" else game.vote)(pid, tid, now=now)
-        if verb == "gift" and len(args) >= 2 and args[-1].isdigit():
-            tid, err = target(" ".join(args[:-1]))
-            return game.gift(pid, tid, int(args[-1]), now=now) if tid else Result.fail(err)
-        if verb in ("say", "anon") and args:
-            return (game.say if verb == "say" else game.anon)(pid, " ".join(args))
-        if verb == "dm" and len(args) >= 2:
-            tid, err = target(args[0])
-            return game.dm(pid, tid, " ".join(args[1:])) if tid else Result.fail(err)
-    except TypeError:
-        pass
-    return Result.fail("Unknown command. Try: move ne | attack VE | upgrade | gift VE 2 | buyinfo | "
-                       "vote VE | say hi | dm VE hello | anon hi")
-
-
-def parse_duration(text: str) -> int | None:
-    """'+2h', '30m', '-1d', '0' -> seconds."""
-    m = re.fullmatch(r"\s*([+-]?)(\d+)\s*([smhd]?)\s*", text)
-    if not m:
-        return None
-    sign = -1 if m.group(1) == "-" else 1
-    mult = {"": 60, "s": 1, "m": 60, "h": 3600, "d": 86400}[m.group(3)]
-    return sign * int(m.group(2)) * mult
-
-
-# ------------------------------------------------------------ DM reply UI
-
-class ConfirmView(discord.ui.View):
-    """Yes / Cancel buttons. Only the person who ran the command can answer.
-    `on_yes` does the real work (and must respond to the interaction)."""
-
-    def __init__(self, owner_id: int, on_yes: Callable[[discord.Interaction], Awaitable[None]],
-                 timeout: float = 120):
-        super().__init__(timeout=timeout)
-        self.owner_id = owner_id
-        self.on_yes = on_yes
-        self.message: discord.Message | discord.InteractionMessage | None = None
-
-    async def _mine(self, interaction: discord.Interaction) -> bool:
-        if interaction.user.id != self.owner_id:
-            await interaction.response.send_message("This isn't your confirmation.", ephemeral=True)
-            return False
-        return True
-
-    @discord.ui.button(label="Yes", style=discord.ButtonStyle.success)
-    async def yes(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if await self._mine(interaction):
-            self.stop()
-            await self.on_yes(interaction)
-
-    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
-    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if await self._mine(interaction):
-            self.stop()
-            await interaction.response.edit_message(content="Cancelled. Nothing was spent.", view=None)
-
-    async def on_timeout(self):
-        if self.message:
-            try:
-                await self.message.edit(content="Confirmation expired. Nothing was spent.", view=None)
-            except discord.HTTPException:
-                pass
-
-
-class ReplyModal(discord.ui.Modal):
-    def __init__(self, bot: "StatecraftBot", to_pid: str, to_name: str):
-        super().__init__(title=f"Reply to {to_name}"[:45])
-        self.bot = bot
-        self.to_pid = to_pid
-        self.body = discord.ui.TextInput(label="Message", style=discord.TextStyle.paragraph, max_length=1500)
-        self.add_item(self.body)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        pid = str(interaction.user.id)
-        res = await self.bot.svc.run(lambda g, now: g.dm(pid, self.to_pid, str(self.body.value)))
-        await interaction.response.send_message(res.message if res.ok else f"Rejected: {res.message}")
-        await self.bot.router.deliver(res.events)
-
-
-class ReplyButton(discord.ui.DynamicItem[discord.ui.Button], template=r"dmreply:(?P<sender>[\w]+)"):
-    """Persistent Reply button on received DMs (survives bot restarts)."""
-
-    def __init__(self, sender: str):
-        super().__init__(discord.ui.Button(label="Reply", style=discord.ButtonStyle.primary,
-                                           custom_id=f"dmreply:{sender}"))
-        self.sender = sender
-
-    @classmethod
-    async def from_custom_id(cls, interaction, item, match):
-        return cls(match["sender"])
-
-    async def callback(self, interaction: discord.Interaction):
-        bot: StatecraftBot = interaction.client  # type: ignore[assignment]
-        sender = bot.svc.game.get(self.sender)
-        if not sender:
-            await interaction.response.send_message("That state no longer exists.", ephemeral=True)
-            return
-        await interaction.response.send_modal(ReplyModal(bot, self.sender, sender.state_name))
 
 
 # ------------------------------------------------------------------ router
@@ -252,9 +71,10 @@ class Router:
             board_dirty |= ev.kind in BOARD_CHANGING
         if board_dirty:
             await self.refresh_board()
+        if events:
+            self.bot.ui.schedule_refresh()
 
     async def _deliver_one(self, ev: Event) -> None:
-        game = self.svc.game
         if ev.kind == "PUBLIC_CHAT":
             await self.post_as_state(ev.data["state"], ev.data["text"])
         elif ev.kind == "ANONYMOUS":
@@ -288,8 +108,7 @@ class Router:
             p = self.svc.game.get(pid)
             await self.admin_log(f"[to {p.state_name if p else pid}] {text}")
             return
-        cid = self.svc.console_of(pid)
-        ch = self.bot.get_channel(cid) if cid else None
+        ch = self.bot.get_channel(self.svc.console_of(pid) or 0)
         if ch:
             kwargs = {"allowed_mentions": NO_PINGS}
             if view:
@@ -323,8 +142,7 @@ class Router:
         mid = self.svc.server.get("board_message_id")
         if mid:
             try:
-                msg = await ch.fetch_message(mid)
-                await msg.edit(embed=emb)
+                await ch.get_partial_message(mid).edit(embed=emb)
                 return
             except discord.NotFound:
                 pass
@@ -343,12 +161,13 @@ class StatecraftBot(discord.Client):
         self.cfg = cfg
         self.svc = GameService(cfg)
         self.router = Router(self)
+        self.ui = UI(self)
         self.tree = app_commands.CommandTree(self)
         self._webhook: discord.Webhook | None = None
         register_commands(self)
 
     async def setup_hook(self):
-        self.add_dynamic_items(ReplyButton)
+        self.add_dynamic_items(ReplyButton, PanelButton, PanelSelect)
         guild = discord.Object(self.cfg.guild_id)
         self.tree.copy_global_to(guild=guild)
         await self.tree.sync(guild=guild)
@@ -359,6 +178,7 @@ class StatecraftBot(discord.Client):
         await self.router.admin_log(f"Statecraft bot online. Phase: {self.svc.game.state.phase}, "
                                     f"day {self.svc.game.state.day}."
                                     + (" **TEST MODE**" if self.cfg.test_mode else ""))
+        self.ui.schedule_refresh()
 
     async def public_chat_webhook(self) -> discord.Webhook | None:
         if self._webhook:
@@ -385,68 +205,10 @@ class StatecraftBot(discord.Client):
 # ---------------------------------------------------------------- commands
 
 def register_commands(bot: StatecraftBot) -> None:
-    tree, svc = bot.tree, bot.svc
+    tree, svc, ui = bot.tree, bot.svc, bot.ui
 
     def is_admin(i: discord.Interaction) -> bool:
         return i.user.id in bot.cfg.admin_ids
-
-    async def console_pid(i: discord.Interaction) -> str | None:
-        """The caller's player id if this is their console; otherwise reply and return None."""
-        pid = str(i.user.id)
-        cid = svc.console_of(pid)
-        if not cid:
-            await i.response.send_message("You're not in the game. Use `/join` in #register.", ephemeral=True)
-            return None
-        if not svc.game.get(pid):
-            await i.response.send_message(f"Name your state first with `/name` in your console: <#{cid}>",
-                                          ephemeral=True)
-            return None
-        if i.channel_id != cid:
-            await i.response.send_message(f"Use game commands in your console: <#{cid}>", ephemeral=True)
-            return None
-        return pid
-
-    def resolve(q: str) -> tuple[str | None, str]:
-        if q in svc.game.state.players:
-            return q, ""
-        p, err = svc.game.find(q)
-        return (p.id if p else None), err
-
-    async def ask(i: discord.Interaction, prompt: str, on_yes, ephemeral: bool = False):
-        view = ConfirmView(i.user.id, on_yes)
-        await i.response.send_message(prompt, view=view, ephemeral=ephemeral, allowed_mentions=NO_PINGS)
-        view.message = await i.original_response()
-
-    async def confirm_action(i: discord.Interaction, prompt: str, fn, ephemeral: bool = False):
-        """Ask before an engine call that spends AP or can't be undone.
-
-        The call is first tried on a throwaway copy of the game. If it would
-        fail, it's run for real right away: it changes nothing, but the
-        rejected attempt is logged. Otherwise the player confirms, and the
-        call runs at the moment they click Yes, with the clock and state as
-        of that click."""
-        async with svc.lock:
-            trial = fn(Game(copy.deepcopy(svc.game.state)), svc.now())
-        if not trial.ok:
-            await reply(i, await svc.run(fn), ephemeral=ephemeral)
-            return
-
-        async def go(ci: discord.Interaction):
-            res = await svc.run(fn)
-            await ci.response.edit_message(content=(res.message if res.ok else f"Rejected: {res.message}")[:2000],
-                                           view=None)
-            await bot.router.deliver(res.events)
-
-        await ask(i, prompt + "\n**Confirm?**", go, ephemeral=ephemeral)
-
-    def ap_note(pid: str, cost: int) -> str:
-        p = svc.game.get(pid)
-        return f"Costs **{cost} AP** (you have {p.ap}) and starts your 15-minute cooldown."
-
-    async def reply(i: discord.Interaction, res: Result, ephemeral: bool = False):
-        text = res.message if res.ok else f"Rejected: {res.message}"
-        await i.response.send_message(text[:2000], ephemeral=ephemeral, allowed_mentions=NO_PINGS)
-        await bot.router.deliver(res.events)
 
     async def states_autocomplete(i: discord.Interaction, current: str, alive_only: bool):
         cur = current.lower()
@@ -466,8 +228,8 @@ def register_commands(bot: StatecraftBot) -> None:
 
     # ---- registration
     # /join takes no name on purpose: if a slash command misfires in #register
-    # it posts as plain text, so the state name is only ever typed in the
-    # private console (/name).
+    # it posts as plain text, so the state name is only ever entered in the
+    # private console.
     @tree.command(description="Join the next game: creates your private console")
     async def join(i: discord.Interaction):
         if i.channel_id != svc.channel_id("register"):
@@ -486,24 +248,12 @@ def register_commands(bot: StatecraftBot) -> None:
         svc.set_console(pid, console.id)
         await bot.router.grant_role(pid, "players")
         await console.send("Welcome to Statecraft. This is your **private console**: only you (and the referee) "
-                           "can see it. Run every game command here.\n\n"
-                           "**First, name your state** with `/name`. You can rename it any time before the game "
-                           f"starts.\n\n{HELP}", allowed_mentions=NO_PINGS)
-        await i.followup.send(f"You're in. Head to your console, {console.mention}, and name your state with `/name`.",
+                           "can see it.\n\nEverything you need is on the **control panel** pinned below: start by "
+                           "tapping **Name my state**. Slash commands work here too (`/help` lists them).",
+                           allowed_mentions=NO_PINGS)
+        await ui.post_panel(pid)
+        await i.followup.send(f"You're in. Head to your console, {console.mention}, and name your state.",
                               ephemeral=True)
-
-    @tree.command(description="Name (or rename) your state before the game starts")
-    @app_commands.describe(name="Your state's name, up to 40 characters")
-    async def name(i: discord.Interaction, name: app_commands.Range[str, 1, 40]):
-        pid = str(i.user.id)
-        cid = svc.console_of(pid)
-        if not cid:
-            await i.response.send_message("Use `/join` in #register first.", ephemeral=True)
-            return
-        if i.channel_id != cid:
-            await i.response.send_message(f"Name your state in your console: <#{cid}>", ephemeral=True)
-            return
-        await reply(i, await svc.run(lambda g, now: g.register(i.user.display_name, name, pid=pid)))
 
     async def create_console(guild: discord.Guild, member: discord.abc.User) -> discord.TextChannel:
         cat = guild.get_channel(svc.server.get("console_category_id"))
@@ -515,6 +265,18 @@ def register_commands(bot: StatecraftBot) -> None:
         }
         return await guild.create_text_channel(f"console-{secrets.token_hex(2)}", category=cat,
                                                overwrites=overwrites, reason="Statecraft console")
+
+    @tree.command(description="Name (or rename) your state before the game starts")
+    @app_commands.describe(name="Your state's name, up to 40 characters")
+    async def name(i: discord.Interaction, name: app_commands.Range[str, 1, 40]):
+        if pid := await ui.console_pid(i, need_state=False):
+            await ui.reply(i, await svc.run(lambda g, now: g.register(i.user.display_name, name, pid=pid)))
+
+    @tree.command(description="Re-post your control panel at the bottom of your console")
+    async def panel(i: discord.Interaction):
+        if pid := await ui.console_pid(i, need_state=False):
+            await i.response.send_message("Here's a fresh panel.", ephemeral=True)
+            await ui.post_panel(pid)
 
     @tree.command(description="Withdraw from the game before it starts")
     async def leave(i: discord.Interaction):
@@ -536,6 +298,8 @@ def register_commands(bot: StatecraftBot) -> None:
             # Respond before deleting: the command may have been run in the console itself.
             await ci.response.edit_message(content="You've left the game. Your console is being deleted.", view=None)
             svc.set_console(pid, None)
+            svc.server.get("panels", {}).pop(pid, None)
+            svc.save_server()
             ch = bot.get_channel(cid) if cid else None
             if ch:
                 await ch.delete(reason="Statecraft: player left")
@@ -543,95 +307,95 @@ def register_commands(bot: StatecraftBot) -> None:
             if rid and isinstance(ci.user, discord.Member):
                 await ci.user.remove_roles(discord.Object(rid))
 
-        await ask(i, "Leave the game? Your state and your console will be deleted.", go, ephemeral=True)
+        await ui.ask(i, "Leave the game? Your state and your console will be deleted.", go, ephemeral=True)
 
-    # ---- actions
+    # ---- actions (all confirmed first)
     @tree.command(description="Move one square (1 AP)")
     @app_commands.choices(direction=DIRECTIONS)
     async def move(i: discord.Interaction, direction: app_commands.Choice[str]):
-        if pid := await console_pid(i):
+        if pid := await ui.console_pid(i):
             p = svc.game.get(pid)
             dx, dy = geometry.DIRECTIONS[direction.value]
             dest = geometry.coord_label(p.x + dx, p.y + dy) if p.x is not None else "?"
-            await confirm_action(i, f"Move **{direction.name}** from {svc.game.pos(p)} to **{dest}**? "
-                                    + ap_note(pid, svc.game.s["move_cost"]),
-                                 lambda g, now: g.move(pid, direction.value, now=now))
+            await ui.confirm_action(i, f"Move **{direction.name}** from {svc.game.pos(p)} to **{dest}**? "
+                                       + ui.ap_note(pid, svc.game.s["move_cost"]),
+                                    lambda g, now: g.move(pid, direction.value, now=now))
 
     @tree.command(description="Attack a state in range (1 AP)")
     @app_commands.autocomplete(state=alive_states)
     async def attack(i: discord.Interaction, state: str):
-        if pid := await console_pid(i):
-            tid, err = resolve(state)
+        if pid := await ui.console_pid(i):
+            tid, err = ui.resolve(state)
             if not tid:
-                await reply(i, Result.fail(err))
+                await ui.reply(i, Result.fail(err))
                 return
             t = svc.game.get(tid)
-            await confirm_action(i, f"Attack **{t.state_name}** [{t.marker}] ({t.hp} HP)? "
-                                    + ap_note(pid, svc.game.s["attack_cost"]),
-                                 lambda g, now: g.attack(pid, tid, now=now))
+            await ui.confirm_action(i, f"Attack **{t.state_name}** [{t.marker}] ({t.hp} HP)? "
+                                       + ui.ap_note(pid, svc.game.s["attack_cost"]),
+                                    lambda g, now: g.attack(pid, tid, now=now))
 
     @tree.command(description="Increase your range by 1 (2 AP)")
     async def upgrade(i: discord.Interaction):
-        if pid := await console_pid(i):
+        if pid := await ui.console_pid(i):
             r = svc.game.range_of(svc.game.get(pid))
-            await confirm_action(i, f"Upgrade your range from {r} to **{r + 1}**? "
-                                    + ap_note(pid, svc.game.s["upgrade_cost"]),
-                                 lambda g, now: g.upgrade(pid, now=now))
+            await ui.confirm_action(i, f"Upgrade your range from {r} to **{r + 1}**? "
+                                       + ui.ap_note(pid, svc.game.s["upgrade_cost"]),
+                                    lambda g, now: g.upgrade(pid, now=now))
 
     @tree.command(description="Gift AP to a state in range (private)")
     @app_commands.autocomplete(state=alive_states)
     async def gift(i: discord.Interaction, state: str, amount: app_commands.Range[int, 1, 999]):
-        if pid := await console_pid(i):
-            tid, err = resolve(state)
+        if pid := await ui.console_pid(i):
+            tid, err = ui.resolve(state)
             if not tid:
-                await reply(i, Result.fail(err))
+                await ui.reply(i, Result.fail(err))
                 return
             t = svc.game.get(tid)
-            await confirm_action(i, f"Gift **{amount} AP** to **{t.state_name}** [{t.marker}]? "
-                                    + ap_note(pid, amount),
-                                 lambda g, now: g.gift(pid, tid, amount, now=now))
+            await ui.confirm_action(i, f"Gift **{amount} AP** to **{t.state_name}** [{t.marker}]? "
+                                       + ui.ap_note(pid, amount),
+                                    lambda g, now: g.gift(pid, tid, amount, now=now))
 
     @tree.command(description="See today's AP gifts until 8:15 PM (1 AP)")
     async def buyinfo(i: discord.Interaction):
-        if pid := await console_pid(i):
-            await confirm_action(i, "Buy information access (today's AP gifts, until 8:15 PM)? The purchase is "
-                                    "announced publicly. " + ap_note(pid, svc.game.s["info_cost"]),
-                                 lambda g, now: g.buy_info(pid, now=now))
+        if pid := await ui.console_pid(i):
+            await ui.confirm_action(i, "Buy information access (today's AP gifts, until 8:15 PM)? The purchase is "
+                                       "announced publicly. " + ui.ap_note(pid, svc.game.s["info_cost"]),
+                                    lambda g, now: g.buy_info(pid, now=now))
 
     @tree.command(description="Jury: secretly vote for a surviving state (8:00 PM-1:45 PM)")
     @app_commands.autocomplete(state=alive_states)
     async def vote(i: discord.Interaction, state: str):
-        if pid := await console_pid(i):
-            tid, err = resolve(state)
-            await reply(i, await svc.run(lambda g, now: g.vote(pid, tid, now=now)) if tid else Result.fail(err))
+        if pid := await ui.console_pid(i):
+            tid, err = ui.resolve(state)
+            await ui.reply(i, await svc.run(lambda g, now: g.vote(pid, tid, now=now)) if tid else Result.fail(err))
 
     # ---- info
     @tree.command(description="Your status, or another state's public status")
     @app_commands.autocomplete(state=any_states)
     async def status(i: discord.Interaction, state: str | None = None):
-        if not (pid := await console_pid(i)):
+        if not (pid := await ui.console_pid(i)):
             return
-        if state is None or resolve(state)[0] == pid:
+        if state is None or ui.resolve(state)[0] == pid:
             await i.response.send_message(own_status(svc.game, pid, svc.now()))
             return
-        tid, err = resolve(state)
+        tid, err = ui.resolve(state)
         await i.response.send_message(public_status(svc.game, pid, tid) if tid else f"Rejected: {err}",
                                       allowed_mentions=NO_PINGS)
 
     @tree.command(description="Show the board here, with a state's range highlighted")
     @app_commands.autocomplete(state=any_states)
     async def board(i: discord.Interaction, state: str | None = None):
-        if not (pid := await console_pid(i)):
+        if not (pid := await ui.console_pid(i)):
             return
         if svc.game.state.board_size == 0:
             await i.response.send_message("The board appears when the game starts.")
             return
-        focus = resolve(state)[0] if state else pid
+        focus = ui.resolve(state)[0] if state else pid
         await i.response.send_message(embed=board_embed(svc.game, focus or pid))
 
     @tree.command(description="Re-show today's AP gifts (needs /buyinfo)")
     async def info(i: discord.Interaction):
-        if pid := await console_pid(i):
+        if pid := await ui.console_pid(i):
             if pid in svc.game.state.info_access:
                 await i.response.send_message(f"```\n{svc.game.gift_report()}\n```")
             else:
@@ -645,7 +409,7 @@ def register_commands(bot: StatecraftBot) -> None:
     @app_commands.choices(setting=[app_commands.Choice(name="on", value="on"),
                                    app_commands.Choice(name="off", value="off")])
     async def notify(i: discord.Interaction, setting: app_commands.Choice[str]):
-        if not await console_pid(i):
+        if not await ui.console_pid(i):
             return
         rid = svc.role_id("updates")
         if rid and isinstance(i.user, discord.Member):
@@ -658,20 +422,20 @@ def register_commands(bot: StatecraftBot) -> None:
     # ---- communication
     @tree.command(description="Post in #public-chat under your state's name")
     async def say(i: discord.Interaction, message: app_commands.Range[str, 1, 1500]):
-        if pid := await console_pid(i):
-            await reply(i, await svc.run(lambda g, now: g.say(pid, message)))
+        if pid := await ui.console_pid(i):
+            await ui.reply(i, await svc.run(lambda g, now: g.say(pid, message)))
 
     @tree.command(description="Send a private message to another state")
     @app_commands.autocomplete(state=any_states)
     async def dm(i: discord.Interaction, state: str, message: app_commands.Range[str, 1, 1500]):
-        if pid := await console_pid(i):
-            tid, err = resolve(state)
-            await reply(i, await svc.run(lambda g, now: g.dm(pid, tid, message)) if tid else Result.fail(err))
+        if pid := await ui.console_pid(i):
+            tid, err = ui.resolve(state)
+            await ui.reply(i, await svc.run(lambda g, now: g.dm(pid, tid, message)) if tid else Result.fail(err))
 
     @tree.command(description="Post anonymously in #anonymous-chat")
     async def anon(i: discord.Interaction, message: app_commands.Range[str, 1, 1500]):
-        if pid := await console_pid(i):
-            await reply(i, await svc.run(lambda g, now: g.anon(pid, message)))
+        if pid := await ui.console_pid(i):
+            await ui.reply(i, await svc.run(lambda g, now: g.anon(pid, message)))
 
     # ---- admin
     admin = app_commands.Group(name="admin", description="Referee tools",
@@ -688,9 +452,9 @@ def register_commands(bot: StatecraftBot) -> None:
         if not await admin_only(i):
             return
         await i.response.defer(ephemeral=True, thinking=True)
+        keep = {k: v for k, v in svc.server.items() if k in ("board_message_id", "test_clock_offset", "panels")}
         report = await discord_setup.ensure_server(i.guild, svc.cfg.server_file)
-        svc.server = {**discord_setup.load_server(svc.cfg.server_file),
-                      **{k: v for k, v in svc.server.items() if k in ("board_message_id", "test_clock_offset")}}
+        svc.server = {**discord_setup.load_server(svc.cfg.server_file), **keep}
         svc.save_server()
         bot._webhook = None
         await i.followup.send("\n".join(report)[:2000], ephemeral=True)
@@ -702,10 +466,10 @@ def register_commands(bot: StatecraftBot) -> None:
             if unnamed:
                 await i.response.send_message(
                     f"Rejected: {len(unnamed)} player(s) joined but haven't named a state: "
-                    + ", ".join(f"<@{p}>" for p in unnamed) + ". They need to run `/name` in their console "
+                    + ", ".join(f"<@{p}>" for p in unnamed) + ". They need to name it on their panel "
                     "(or `/leave`).", ephemeral=True, allowed_mentions=NO_PINGS)
                 return
-            await reply(i, await svc.run(lambda g, now: g.start(now=now)), ephemeral=True)
+            await ui.reply(i, await svc.run(lambda g, now: g.start(now=now)), ephemeral=True)
 
     @admin.command(name="status", description="Full game view, including owners and AP")
     async def admin_status(i: discord.Interaction):
@@ -731,8 +495,9 @@ def register_commands(bot: StatecraftBot) -> None:
     async def give(i: discord.Interaction, state: str, amount: int):
         if not await admin_only(i):
             return
-        tid, err = resolve(state)
-        await reply(i, await svc.run(lambda g, now: g.give_ap(tid, amount)) if tid else Result.fail(err), ephemeral=True)
+        tid, err = ui.resolve(state)
+        await ui.reply(i, await svc.run(lambda g, now: g.give_ap(tid, amount)) if tid else Result.fail(err),
+                       ephemeral=True)
 
     @admin.command(description="End the game with these states as (joint) winners")
     @app_commands.describe(states="Markers or names separated by commas, e.g. VE, WE")
@@ -741,14 +506,14 @@ def register_commands(bot: StatecraftBot) -> None:
             return
         ids, errors = [], []
         for q in [x.strip() for x in states.split(",") if x.strip()]:
-            tid, err = resolve(q)
+            tid, err = ui.resolve(q)
             (ids.append(tid) if tid else errors.append(err))
         if errors:
             await i.response.send_message("Rejected: " + " ".join(errors), ephemeral=True)
             return
         names = ", ".join(svc.game.get(t).state_name for t in ids)
-        await confirm_action(i, f"**End the game now** with winner(s): **{names}**? This can't be undone.",
-                             lambda g, now: g.declare_winners(ids), ephemeral=True)
+        await ui.confirm_action(i, f"**End the game now** with winner(s): **{names}**? This can't be undone.",
+                                lambda g, now: g.declare_winners(ids), ephemeral=True)
 
     @admin.command(description="Rank jurors by votes for the winner(s)")
     async def juryscore(i: discord.Interaction):
@@ -770,6 +535,7 @@ def register_commands(bot: StatecraftBot) -> None:
             await i.response.send_message(f"Reloaded. Phase {svc.game.state.phase}, day {svc.game.state.day}.",
                                           ephemeral=True)
             await bot.router.refresh_board()
+            ui.schedule_refresh()
 
     @admin.command(description="Wipe the game (keeps the old history log)")
     async def reset(i: discord.Interaction):
@@ -797,12 +563,13 @@ def register_commands(bot: StatecraftBot) -> None:
                 except (discord.NotFound, ValueError):
                     pass
             svc.server.pop("board_message_id", None)
+            svc.server["panels"] = {}
             svc.save_server()
             await ci.edit_original_response(content="Game reset." + (f" Old history kept as {archived}."
                                                                      if archived else ""))
 
-        await ask(i, "**Wipe the current game?** This deletes every state, every console, and the game roles. "
-                     "The history log is kept under a timestamped name.", go, ephemeral=True)
+        await ui.ask(i, "**Wipe the current game?** This deletes every state, every console, and the game roles. "
+                        "The history log is kept under a timestamped name.", go, ephemeral=True)
 
     tree.add_command(admin)
 
@@ -832,7 +599,7 @@ def register_commands(bot: StatecraftBot) -> None:
     async def as_(i: discord.Interaction, state: str, command: str):
         if not await admin_only(i):
             return
-        tid, err = resolve(state)
+        tid, err = ui.resolve(state)
         if not tid:
             await i.response.send_message(f"Rejected: {err}", ephemeral=True)
             return
@@ -845,7 +612,7 @@ def register_commands(bot: StatecraftBot) -> None:
     @test.command(name="start", description="Start with fewer than 12 players")
     async def test_start(i: discord.Interaction):
         if await admin_only(i):
-            await reply(i, await svc.run(lambda g, now: g.start(force=True, now=now)), ephemeral=True)
+            await ui.reply(i, await svc.run(lambda g, now: g.start(force=True, now=now)), ephemeral=True)
 
     @test.command(description="Shift the bot's clock: +2h, +30m, +1d, or 0 to reset")
     async def clock(i: discord.Interaction, offset: str):
@@ -860,11 +627,12 @@ def register_commands(bot: StatecraftBot) -> None:
         await i.response.send_message(f"Clock offset {timedelta(seconds=total)}. Game time is now "
                                       f"**{schedule.fmt(svc.now(), svc.game.s)}**. Scheduled events will run "
                                       f"within 30 seconds.", ephemeral=True)
+        ui.schedule_refresh()
 
     @test.command(description="Run the 2:00 PM daily tick now")
     async def tick(i: discord.Interaction):
         if await admin_only(i):
-            await reply(i, await svc.run(lambda g, now: g.next_day(now=now)), ephemeral=True)
+            await ui.reply(i, await svc.run(lambda g, now: g.next_day(now=now)), ephemeral=True)
 
     tree.add_command(test)
 
