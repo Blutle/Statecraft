@@ -603,12 +603,12 @@ class Game:
     # Relays only: no AP, no cooldown, no game-state change. Their true author
     # is always written to the history, even for anonymous posts.
 
-    def _message_text(self, text: str) -> tuple[str, str]:
+    def _message_text(self, text: str, limit: int = MAX_MESSAGE_LEN) -> tuple[str, str]:
         text = text.strip()
         if not text:
             return "", "Message is empty."
-        if len(text) > MAX_MESSAGE_LEN:
-            return "", f"Messages are limited to {MAX_MESSAGE_LEN} characters."
+        if len(text) > limit:
+            return "", f"Messages are limited to {limit} characters."
         return text, ""
 
     @recorded("say")
@@ -655,6 +655,149 @@ class Game:
             return Result.fail(err)
         return Result(True, "Posted anonymously to #anonymous-chat.",
                       [Event("ANONYMOUS", public=f"Anonymous: {text}", data={"text": text})])
+
+    # ------------------------------------------------------------------ pacts
+    # Anonymous group chats. The engine owns membership and logs every
+    # message; the interface gives each member a private copy of the pact
+    # channel and relays messages between copies under state names.
+    #
+    # pact = {"id", "name", "founder", "original_founder", "members": [ids in
+    #         join order], "invites": [ids], "created_day", "active": bool}
+
+    def pacts_of(self, pid: str) -> list[dict]:
+        return [pc for pc in self.state.pacts.values() if pc["active"] and pid in pc["members"]]
+
+    def pact(self, pact_id: str) -> dict | None:
+        pc = self.state.pacts.get(pact_id)
+        return pc if pc and pc["active"] else None
+
+    def _pact_player(self, pid: str) -> tuple[Player | None, str]:
+        p = self.get(pid)
+        if not p:
+            return None, "You are not a player in this game."
+        if self.state.phase == "ended":
+            return None, "The game is over."
+        return p, ""
+
+    @recorded("pact_create")
+    def create_pact(self, pid: str, name: str) -> Result:
+        p, err = self._pact_player(pid)
+        if err:
+            return Result.fail(err)
+        name = " ".join(name.split())
+        if not name or len(name) > MAX_NAME_LEN:
+            return Result.fail(f"Pact names must be 1-{MAX_NAME_LEN} characters.")
+        if any(c in name for c in "@#<>`*_~|\\"):
+            return Result.fail("Pact names can't contain @ # < > ` * _ ~ | or backslashes.")
+        founded = sum(1 for pc in self.state.pacts.values() if pc["original_founder"] == pid)
+        if founded >= self.s["pact_found_limit"]:
+            return Result.fail(f"You've already founded {founded} pacts (the limit is {self.s['pact_found_limit']}).")
+        if len(self.pacts_of(pid)) >= self.s["pact_member_limit"]:
+            return Result.fail(f"You're already in {self.s['pact_member_limit']} pacts, the most allowed.")
+        pact_id = f"k{self.state.next_pact_num}"
+        self.state.next_pact_num += 1
+        self.state.pacts[pact_id] = {"id": pact_id, "name": name, "founder": pid, "original_founder": pid,
+                                     "members": [pid], "invites": [], "created_day": self.state.day,
+                                     "active": True}
+        return self._done(Result(True, f"Founded the pact **{name}**. Invite states to it from your console.",
+                                 [Event("PACT_JOINED", data={"pact": pact_id, "member": pid, "founded": True})]))
+
+    @recorded("pact_invite")
+    def invite_to_pact(self, pid: str, pact_id: str, tid: str) -> Result:
+        p, err = self._pact_player(pid)
+        if err:
+            return Result.fail(err)
+        pc = self.pact(pact_id)
+        if not pc or pid not in pc["members"]:
+            return Result.fail("You're not in that pact.")
+        if pc["founder"] != pid:
+            return Result.fail("Only the pact's founder can invite.")
+        t = self.get(tid)
+        if not t or t.id == pid:
+            return Result.fail("No such state.")
+        if tid in pc["members"]:
+            return Result.fail(f"{t.state_name} is already in {pc['name']}.")
+        if tid in pc["invites"]:
+            return Result.fail(f"{t.state_name} already has a pending invitation.")
+        pc["invites"].append(tid)
+        return self._done(Result(True, f"Invited {t.state_name} to {pc['name']}.", [Event(
+            "PACT_INVITE", private={tid: f"**{p.state_name}** invites you to join the pact **{pc['name']}**."},
+            data={"pact": pact_id, "invitee": tid, "inviter": pid})]))
+
+    @recorded("pact_respond")
+    def respond_to_pact(self, pid: str, pact_id: str, accept: bool) -> Result:
+        p, err = self._pact_player(pid)
+        if err:
+            return Result.fail(err)
+        pc = self.pact(pact_id)
+        if not pc or pid not in pc["invites"]:
+            return Result.fail("That invitation is no longer open.")
+        if accept and len(self.pacts_of(pid)) >= self.s["pact_member_limit"]:
+            return Result.fail(f"You're already in {self.s['pact_member_limit']} pacts, the most allowed. "
+                               "Leave one first.")
+        pc["invites"].remove(pid)
+        founder = self.get(pc["founder"])
+        if not accept:
+            return self._done(Result(True, f"Declined the invitation to {pc['name']}.", [Event(
+                "PACT_DECLINED", private={pc["founder"]: f"{p.state_name} declined your invitation to {pc['name']}."},
+                data={"pact": pact_id, "member": pid})]))
+        pc["members"].append(pid)
+        return self._done(Result(True, f"You joined **{pc['name']}** (founded by {founder.state_name}).",
+                                 [Event("PACT_JOINED", data={"pact": pact_id, "member": pid, "founded": False})]))
+
+    def _remove_from_pact(self, pc: dict, pid: str, kind: str) -> Event:
+        pc["members"].remove(pid)
+        data = {"pact": pc["id"], "member": pid, "dissolved": False, "new_founder": None}
+        if not pc["members"]:
+            pc["active"] = False
+            pc["invites"] = []
+            data["dissolved"] = True
+        elif pc["founder"] == pid:
+            pc["founder"] = pc["members"][0]          # longest-standing member
+            data["new_founder"] = pc["founder"]
+        return Event(kind, data=data)
+
+    @recorded("pact_leave")
+    def leave_pact(self, pid: str, pact_id: str) -> Result:
+        p, err = self._pact_player(pid)
+        if err:
+            return Result.fail(err)
+        pc = self.pact(pact_id)
+        if not pc or pid not in pc["members"]:
+            return Result.fail("You're not in that pact.")
+        ev = self._remove_from_pact(pc, pid, "PACT_LEFT")
+        return self._done(Result(True, f"You left {pc['name']}.", [ev]))
+
+    @recorded("pact_kick")
+    def kick_from_pact(self, pid: str, pact_id: str, tid: str) -> Result:
+        p, err = self._pact_player(pid)
+        if err:
+            return Result.fail(err)
+        pc = self.pact(pact_id)
+        if not pc or pid not in pc["members"]:
+            return Result.fail("You're not in that pact.")
+        if pc["founder"] != pid:
+            return Result.fail("Only the pact's founder can remove members.")
+        if tid == pid or tid not in pc["members"]:
+            return Result.fail("That state isn't a member you can remove.")
+        t = self.get(tid)
+        ev = self._remove_from_pact(pc, tid, "PACT_KICKED")
+        return self._done(Result(True, f"Removed {t.state_name} from {pc['name']}.", [ev]))
+
+    @recorded("pact_message")
+    def pact_message(self, pid: str, pact_id: str, text: str) -> Result:
+        p, err = self._pact_player(pid)
+        if err:
+            return Result.fail(err)
+        pc = self.pact(pact_id)
+        if not pc or pid not in pc["members"]:
+            return Result.fail("You're not in that pact.")
+        text, err = self._message_text(text, limit=2000)
+        if err:
+            return Result.fail(err)
+        others = [m for m in pc["members"] if m != pid]
+        return Result(True, "", [Event("PACT_MESSAGE", data={
+            "pact": pact_id, "sender": pid, "state": p.state_name, "text": text, "recipients": others})])
 
     # ---------------------------------------------------------------- history
 

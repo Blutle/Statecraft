@@ -25,7 +25,7 @@ from . import config, discord_setup, geometry, schedule
 from .discord_format import (HELP, NO_PINGS, board_embed, own_status, parse_duration, public_status,
                              run_text)
 from .discord_service import GameService
-from .discord_ui import UI, PanelButton, PanelSelect, ReplyButton
+from .discord_ui import UI, PactInviteButton, PanelButton, PanelSelect, ReplyButton, pact_summary
 from .models import Event, Result
 
 log = logging.getLogger("statecraft")
@@ -34,6 +34,7 @@ PUBLIC_KINDS_PLAYERS_PING = {"ATTACK", "ELIMINATION", "GAME_OVER", "GAME_START"}
 PUBLIC_KINDS_UPDATES_PING = {"MOVE", "UPGRADE", "INFO_PURCHASE"}
 BOARD_CHANGING = {"GAME_START", "MOVE", "ATTACK", "ELIMINATION", "UPGRADE", "DAILY_AP",
                   "JURY_RESULT", "GAME_OVER"}
+CHAT_KINDS = {"PUBLIC_CHAT", "ANONYMOUS", "PRIVATE_MESSAGE", "PACT_MESSAGE"}   # no panel refresh needed
 DIRECTIONS = [app_commands.Choice(name=n, value=v) for n, v in [
     ("North (up)", "n"), ("North-east", "ne"), ("East (right)", "e"), ("South-east", "se"),
     ("South (down)", "s"), ("South-west", "sw"), ("West (left)", "w"), ("North-west", "nw")]]
@@ -71,7 +72,7 @@ class Router:
             board_dirty |= ev.kind in BOARD_CHANGING
         if board_dirty:
             await self.refresh_board()
-        if events:
+        if any(ev.kind not in CHAT_KINDS for ev in events):
             self.bot.ui.schedule_refresh()
 
     async def _deliver_one(self, ev: Event) -> None:
@@ -98,10 +99,120 @@ class Router:
             if ev.kind == "PRIVATE_MESSAGE":
                 view = discord.ui.View(timeout=None)
                 view.add_item(ReplyButton(ev.data["sender"]))
+            elif ev.kind == "PACT_INVITE":
+                view = discord.ui.View(timeout=None)
+                view.add_item(PactInviteButton(ev.data["pact"], "y"))
+                view.add_item(PactInviteButton(ev.data["pact"], "n"))
             await self.to_player(pid, text, view=view)
 
         if ev.kind == "ELIMINATION":
             await self.grant_role(ev.data["victim"], "jury")
+        if ev.kind in ("PACT_JOINED", "PACT_LEFT", "PACT_KICKED", "PACT_MESSAGE"):
+            await self._pact(ev)
+
+    # ---- pacts: one private copy of the pact channel per member, relayed
+
+    async def _pact(self, ev: Event) -> None:
+        d, game = ev.data, self.svc.game
+        pact_id = d["pact"]
+        pc = game.state.pacts.get(pact_id)
+        if ev.kind == "PACT_MESSAGE":
+            for rid in d["recipients"]:
+                await self.pact_post(pact_id, rid, d["text"], username=d["state"])
+            return
+        who = game.get(d["member"]).state_name
+        if ev.kind == "PACT_JOINED":
+            await self.ensure_pact_copy(pact_id, d["member"])
+            if not d.get("founded"):
+                await self.pact_notice(pact_id, f"**{who}** joined the pact.", exclude=d["member"])
+            return
+        # left or kicked
+        await self.remove_pact_copy(pact_id, d["member"])
+        if d["dissolved"]:
+            return
+        verb = "left the pact" if ev.kind == "PACT_LEFT" else "was removed from the pact"
+        note = f"**{who}** {verb}."
+        if d["new_founder"]:
+            note += f" **{game.get(d['new_founder']).state_name}** is now the founder."
+        await self.pact_notice(pact_id, note)
+        if ev.kind == "PACT_KICKED":
+            await self.to_player(d["member"], f"You were removed from the pact **{pc['name']}**.")
+
+    async def pact_category(self, guild: discord.Guild) -> discord.CategoryChannel:
+        """A pact category with room (Discord allows 50 channels per category)."""
+        ids = self.svc.server.setdefault("pact_categories", [])
+        for cid in ids:
+            cat = guild.get_channel(cid)
+            if cat and len(cat.channels) < 50:
+                return cat
+        cat = await guild.create_category(
+            f"Statecraft Pacts {len(ids) + 1}" if ids else "Statecraft Pacts",
+            overwrites={guild.default_role: discord.PermissionOverwrite(view_channel=False),
+                        guild.me: discord.PermissionOverwrite(**discord_setup.BOT_PERMS)},
+            reason="Statecraft pacts")
+        ids.append(cat.id)
+        self.svc.save_server()
+        return cat
+
+    async def ensure_pact_copy(self, pact_id: str, pid: str) -> None:
+        if self.svc.is_fake(pid) or self.svc.pact_copy(pact_id, pid):
+            return
+        guild = self.bot.get_guild(self.svc.cfg.guild_id)
+        pc = self.svc.game.state.pacts[pact_id]
+        member = await guild.fetch_member(int(pid))
+        slug = "".join(c if c.isalnum() else "-" for c in pc["name"].lower()).strip("-") or "pact"
+        ch = await guild.create_text_channel(
+            f"pact-{slug}"[:90], category=await self.pact_category(guild),
+            topic="Messages you type here are relayed to the other members under your state name.",
+            overwrites={guild.default_role: discord.PermissionOverwrite(view_channel=False),
+                        guild.me: discord.PermissionOverwrite(**discord_setup.BOT_PERMS),
+                        member: discord.PermissionOverwrite(view_channel=True, send_messages=True,
+                                                            read_message_history=True, add_reactions=True,
+                                                            attach_files=True, embed_links=True)},
+            reason="Statecraft pact")
+        hook = await ch.create_webhook(name="Statecraft Pact Relay", reason="Statecraft pact")
+        self.svc.set_pact_copy(pact_id, pid, {"channel": ch.id, "hook_id": hook.id, "hook_token": hook.token})
+        game = self.svc.game
+        members = ", ".join(game.get(m).state_name + (" (founder)" if m == pc["founder"] else "")
+                            for m in pc["members"])
+        await ch.send(f"**Pact: {pc['name']}**\nMembers: {members}\n\nType here to talk. Your messages are relayed "
+                      "to the other members under your **state name**, and theirs appear here the same way. "
+                      "Nobody sees anyone's Discord account. You won't see messages from before you joined. "
+                      "Everything is logged for the post-game summary.", allowed_mentions=NO_PINGS)
+        self.bot.ui.schedule_refresh()
+
+    async def remove_pact_copy(self, pact_id: str, pid: str) -> None:
+        rec = self.svc.pact_copy(pact_id, pid)
+        if not rec:
+            return
+        self.svc.set_pact_copy(pact_id, pid, None)
+        ch = self.bot.get_channel(rec["channel"])
+        if ch:
+            await ch.delete(reason="Statecraft pact")
+
+    async def pact_post(self, pact_id: str, pid: str, text: str, username: str) -> None:
+        if self.svc.is_fake(pid):
+            pc = self.svc.game.state.pacts.get(pact_id, {})
+            await self.admin_log(f"[pact {pc.get('name')} -> {self.svc.game.get(pid).state_name}] {username}: {text}")
+            return
+        rec = self.svc.pact_copy(pact_id, pid)
+        if rec:
+            hook = discord.Webhook.partial(rec["hook_id"], rec["hook_token"], client=self.bot)
+            await hook.send(text[:2000], username=username[:80], allowed_mentions=NO_PINGS)
+
+    async def pact_notice(self, pact_id: str, text: str, exclude: str | None = None) -> None:
+        pc = self.svc.game.state.pacts.get(pact_id)
+        if not pc:
+            return
+        for m in pc["members"]:
+            if m == exclude:
+                continue
+            if self.svc.is_fake(m):
+                continue
+            rec = self.svc.pact_copy(pact_id, m)
+            ch = self.bot.get_channel(rec["channel"]) if rec else None
+            if ch:
+                await ch.send(f"*{text}*", allowed_mentions=NO_PINGS)
 
     async def to_player(self, pid: str, text: str, view: discord.ui.View | None = None) -> None:
         if self.svc.is_fake(pid):
@@ -167,7 +278,7 @@ class StatecraftBot(discord.Client):
         register_commands(self)
 
     async def setup_hook(self):
-        self.add_dynamic_items(ReplyButton, PanelButton, PanelSelect)
+        self.add_dynamic_items(ReplyButton, PanelButton, PanelSelect, PactInviteButton)
         guild = discord.Object(self.cfg.guild_id)
         self.tree.copy_global_to(guild=guild)
         await self.tree.sync(guild=guild)
@@ -179,6 +290,27 @@ class StatecraftBot(discord.Client):
                                     f"day {self.svc.game.state.day}."
                                     + (" **TEST MODE**" if self.cfg.test_mode else ""))
         self.ui.schedule_refresh()
+
+    async def on_message(self, message: discord.Message):
+        """Relay messages typed in a pact channel copy to the other members."""
+        if message.author.bot or message.webhook_id:
+            return
+        found = self.svc.pact_of_channel(message.channel.id)
+        if not found:
+            return
+        pact_id, owner = found
+        if str(message.author.id) != owner:          # e.g. the referee looking in
+            return
+        text = message.content.strip()
+        if message.attachments:
+            text = (text + "\n" + "\n".join(a.url for a in message.attachments)).strip()
+        if not text:
+            return
+        res = await self.svc.run(lambda g, now: g.pact_message(owner, pact_id, text))
+        if not res.ok:
+            await message.reply(f"Not relayed: {res.message}", allowed_mentions=NO_PINGS)
+            return
+        await self.router.deliver(res.events)
 
     async def public_chat_webhook(self) -> discord.Webhook | None:
         if self._webhook:
@@ -437,6 +569,97 @@ def register_commands(bot: StatecraftBot) -> None:
         if pid := await ui.console_pid(i):
             await ui.reply(i, await svc.run(lambda g, now: g.anon(pid, message)))
 
+    # ---- pacts
+    pact = app_commands.Group(name="pact", description="Private, anonymous group chats with other states")
+
+    async def my_pacts(i: discord.Interaction, current: str):
+        pid, cur = str(i.user.id), current.lower()
+        return [app_commands.Choice(name=pc["name"][:100], value=pc["id"])
+                for pc in svc.game.pacts_of(pid) if cur in pc["name"].lower()][:25]
+
+    def resolve_pact(pid: str, q: str) -> str | None:
+        for pc in svc.game.pacts_of(pid):
+            if q in (pc["id"], pc["name"]) or pc["name"].lower() == q.lower():
+                return pc["id"]
+        return None
+
+    @pact.command(name="create", description="Found a pact (you can found up to 3)")
+    async def pact_create(i: discord.Interaction, name: app_commands.Range[str, 1, 40]):
+        if pid := await ui.console_pid(i):
+            await ui.reply(i, await svc.run(lambda g, now: g.create_pact(pid, name)))
+
+    @pact.command(name="invite", description="Founder only: invite a state to your pact")
+    @app_commands.autocomplete(pact=my_pacts, state=any_states)
+    async def pact_invite(i: discord.Interaction, pact: str, state: str):
+        if pid := await ui.console_pid(i):
+            pact_id, (tid, err) = resolve_pact(pid, pact), ui.resolve(state)
+            if not pact_id or not tid:
+                await ui.reply(i, Result.fail("You're not in that pact." if not pact_id else err))
+                return
+            await ui.reply(i, await svc.run(lambda g, now: g.invite_to_pact(pid, pact_id, tid)))
+
+    @pact.command(name="leave", description="Leave a pact")
+    @app_commands.autocomplete(pact=my_pacts)
+    async def pact_leave(i: discord.Interaction, pact: str):
+        if pid := await ui.console_pid(i):
+            pact_id = resolve_pact(pid, pact)
+            if not pact_id:
+                await ui.reply(i, Result.fail("You're not in that pact."))
+                return
+            name = svc.game.pact(pact_id)["name"]
+            await ui.confirm_action(i, f"Leave **{name}**? Your copy of its channel will be deleted.",
+                                    lambda g, now: g.leave_pact(pid, pact_id))
+
+    @pact.command(name="kick", description="Founder only: remove a member")
+    @app_commands.autocomplete(pact=my_pacts, state=any_states)
+    async def pact_kick(i: discord.Interaction, pact: str, state: str):
+        if pid := await ui.console_pid(i):
+            pact_id, (tid, err) = resolve_pact(pid, pact), ui.resolve(state)
+            if not pact_id or not tid:
+                await ui.reply(i, Result.fail("You're not in that pact." if not pact_id else err))
+                return
+            pc, t = svc.game.pact(pact_id), svc.game.get(tid)
+            await ui.confirm_action(i, f"Remove **{t.state_name}** from **{pc['name']}**?",
+                                    lambda g, now: g.kick_from_pact(pid, pact_id, tid))
+
+    @pact.command(name="list", description="Your pacts, their members, and pending invitations")
+    async def pact_list(i: discord.Interaction):
+        if pid := await ui.console_pid(i):
+            await i.response.send_message(pact_summary(svc.game, pid), allowed_mentions=NO_PINGS)
+
+    tree.add_command(pact)
+
+    async def delete_game_channels(guild: discord.Guild, people: set[str]) -> None:
+        """Delete consoles and pact channels, and remove game roles. Keeps game.json."""
+        for pid, cid in list(svc.server.get("consoles", {}).items()):
+            ch = bot.get_channel(cid)
+            if ch:
+                await ch.delete(reason="Statecraft cleanup")
+            svc.set_console(pid, None)
+        for copies in list(svc.pact_channels().values()):
+            for rec in copies.values():
+                ch = bot.get_channel(rec["channel"])
+                if ch:
+                    await ch.delete(reason="Statecraft cleanup")
+        svc.server["pact_channels"] = {}
+        for cid in svc.server.get("pact_categories", []):
+            cat = bot.get_channel(cid)
+            if cat:
+                await cat.delete(reason="Statecraft cleanup")
+        svc.server["pact_categories"] = []
+        svc.server["panels"] = {}
+        # Remove game roles from each known player (no member-list intent needed)
+        role_ids = [svc.role_id(k) for k in ("players", "updates", "jury") if svc.role_id(k)]
+        for pid in people:
+            if svc.is_fake(pid):
+                continue
+            try:
+                member = await guild.fetch_member(int(pid))
+                await member.remove_roles(*[discord.Object(r) for r in role_ids], reason="Statecraft cleanup")
+            except (discord.NotFound, ValueError):
+                pass
+        svc.save_server()
+
     # ---- admin
     admin = app_commands.Group(name="admin", description="Referee tools",
                                default_permissions=discord.Permissions(manage_guild=True))
@@ -547,29 +770,29 @@ def register_commands(bot: StatecraftBot) -> None:
             people = set(svc.server["consoles"]) | set(svc.game.state.players)
             async with svc.lock:
                 archived = svc.reset()
-            for pid, cid in list(svc.server["consoles"].items()):
-                ch = bot.get_channel(cid)
-                if ch:
-                    await ch.delete(reason="Statecraft reset")
-                svc.set_console(pid, None)
-            # Remove game roles from each known player (no member-list intent needed)
-            role_ids = [svc.role_id(k) for k in ("players", "updates", "jury") if svc.role_id(k)]
-            for pid in people:
-                if svc.is_fake(pid):
-                    continue
-                try:
-                    member = await ci.guild.fetch_member(int(pid))
-                    await member.remove_roles(*[discord.Object(r) for r in role_ids], reason="Statecraft reset")
-                except (discord.NotFound, ValueError):
-                    pass
+            await delete_game_channels(ci.guild, people)
             svc.server.pop("board_message_id", None)
-            svc.server["panels"] = {}
             svc.save_server()
             await ci.edit_original_response(content="Game reset." + (f" Old history kept as {archived}."
                                                                      if archived else ""))
 
-        await ui.ask(i, "**Wipe the current game?** This deletes every state, every console, and the game roles. "
-                        "The history log is kept under a timestamped name.", go, ephemeral=True)
+        await ui.ask(i, "**Wipe the current game?** This deletes every state, console, and pact channel, and "
+                        "removes the game roles. The history log is kept under a timestamped name.", go,
+                     ephemeral=True)
+
+    @admin.command(description="After a game: delete consoles and pact channels, remove roles (keeps the record)")
+    async def cleanup(i: discord.Interaction):
+        if not await admin_only(i):
+            return
+
+        async def go(ci: discord.Interaction):
+            await ci.response.edit_message(content="Cleaning up...", view=None)
+            await delete_game_channels(ci.guild, set(svc.server["consoles"]) | set(svc.game.state.players))
+            await ci.edit_original_response(content="Cleaned up. game.json and the history log are untouched.")
+
+        warn = "" if svc.game.state.phase == "ended" else " **The game is still in progress!**"
+        await ui.ask(i, "Delete every console and pact channel and remove the game roles? The game record "
+                        f"(game.json and the history log) is kept.{warn}", go, ephemeral=True)
 
     tree.add_command(admin)
 

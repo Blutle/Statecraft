@@ -132,6 +132,157 @@ class NameModal(discord.ui.Modal, title="Name your state"):
         await self.ui.reply(interaction, res, ephemeral=True)
 
 
+# --------------------------------------------------------------------- pacts
+
+class PactInviteButton(discord.ui.DynamicItem[discord.ui.Button], template=r"pactinv:(?P<pact>k\d+):(?P<ans>[yn])"):
+    """Accept / Decline on a pact invitation (persistent)."""
+
+    def __init__(self, pact: str, ans: str):
+        super().__init__(discord.ui.Button(label="Accept" if ans == "y" else "Decline",
+                                           style=discord.ButtonStyle.success if ans == "y"
+                                           else discord.ButtonStyle.secondary,
+                                           custom_id=f"pactinv:{pact}:{ans}"))
+        self.pact, self.ans = pact, ans
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls(match["pact"], match["ans"])
+
+    async def callback(self, interaction: discord.Interaction):
+        ui: UI = interaction.client.ui  # type: ignore[attr-defined]
+        pid = str(interaction.user.id)
+        res = await ui.svc.run(lambda g, now: g.respond_to_pact(pid, self.pact, self.ans == "y"))
+        await ui.reply(interaction, res, edit=True)
+
+
+class PactCreateModal(discord.ui.Modal, title="Found a pact"):
+    name = discord.ui.TextInput(label="Pact name (up to 40 characters)", max_length=40,
+                                placeholder="e.g. The Iron Accord")
+
+    def __init__(self, ui: "UI"):
+        super().__init__()
+        self.ui = ui
+
+    async def on_submit(self, interaction: discord.Interaction):
+        pid, value = str(interaction.user.id), str(self.name.value)
+        await self.ui.reply(interaction, await self.ui.svc.run(lambda g, now: g.create_pact(pid, value)),
+                            ephemeral=True)
+
+
+def pact_summary(game: Game, pid: str) -> str:
+    mine = game.pacts_of(pid)
+    lines = [f"**Your pacts** ({len(mine)}/{game.s['pact_member_limit']}; founded "
+             f"{sum(1 for pc in game.state.pacts.values() if pc['original_founder'] == pid)}"
+             f"/{game.s['pact_found_limit']}):"]
+    for pc in mine:
+        members = ", ".join(game.get(m).state_name + (" ★" if m == pc["founder"] else "") for m in pc["members"])
+        lines.append(f"• **{pc['name']}**: {members}")
+    if not mine:
+        lines.append("• none yet")
+    invites = [pc for pc in game.state.pacts.values() if pc["active"] and pid in pc["invites"]]
+    if invites:
+        lines.append("**Pending invitations** (accept them from the invitation message in your console):")
+        lines += [f"• {pc['name']} (from {game.get(pc['founder']).state_name})" for pc in invites]
+    lines.append("★ = founder. Only the founder can invite or remove members.")
+    return "\n".join(lines)
+
+
+class PactMenuView(discord.ui.View):
+    """Private pact menu opened from the panel."""
+
+    def __init__(self, ui: "UI", pid: str):
+        super().__init__(timeout=180)
+        self.ui, self.pid = ui, pid
+        g = ui.svc.game
+        mine = g.pacts_of(pid)
+        founded = [pc for pc in mine if pc["founder"] == pid]
+        self._button("Found a pact", discord.ButtonStyle.primary, self.create, "🤝")
+        self._button("Invite a state", discord.ButtonStyle.secondary, self.invite, "➕", disabled=not founded)
+        self._button("Remove a member", discord.ButtonStyle.secondary, self.kick, "➖",
+                     disabled=not any(len(pc["members"]) > 1 for pc in founded))
+        self._button("Leave a pact", discord.ButtonStyle.danger, self.leave, "🚪", disabled=not mine)
+
+    def _button(self, label, style, cb, emoji, disabled=False):
+        b = discord.ui.Button(label=label, style=style, emoji=emoji, disabled=disabled)
+        b.callback = cb
+        self.add_item(b)
+
+    async def create(self, i: discord.Interaction):
+        await i.response.send_modal(PactCreateModal(self.ui))
+
+    def _pick(self, placeholder: str, options: list[discord.SelectOption], then) -> discord.ui.View:
+        view = discord.ui.View(timeout=120)
+        sel = discord.ui.Select(placeholder=placeholder, options=options[:25])
+
+        async def cb(i: discord.Interaction):
+            await then(i, sel.values[0])
+
+        sel.callback = cb
+        view.add_item(sel)
+        return view
+
+    def _pact_options(self, pacts) -> list[discord.SelectOption]:
+        return [discord.SelectOption(label=pc["name"][:100], value=pc["id"],
+                                     description=f"{len(pc['members'])} member(s)") for pc in pacts]
+
+    async def invite(self, i: discord.Interaction):
+        ui, pid, g = self.ui, self.pid, self.ui.svc.game
+        founded = [pc for pc in g.pacts_of(pid) if pc["founder"] == pid]
+
+        async def chose_pact(ci: discord.Interaction, pact_id: str):
+            pc = g.pact(pact_id)
+            candidates = [p for p in g.state.players.values()
+                          if p.id not in pc["members"] and p.id not in pc["invites"]]
+            if not candidates:
+                await ci.response.edit_message(content="Everyone is already a member or invited.", view=None)
+                return
+            opts = [discord.SelectOption(label=f"{p.state_name} [{p.marker}]"[:100], value=p.id,
+                                         description="alive" if p.alive else "destroyed (jury)")
+                    for p in candidates]
+
+            async def chose_state(si: discord.Interaction, tid: str):
+                await ui.reply(si, await ui.svc.run(lambda g, now: g.invite_to_pact(pid, pact_id, tid)), edit=True)
+
+            await ci.response.edit_message(content=f"Invite which state to **{pc['name']}**?",
+                                           view=self._pick("Choose a state…", opts, chose_state))
+
+        await i.response.edit_message(content="Invite to which pact?",
+                                      view=self._pick("Choose a pact…", self._pact_options(founded), chose_pact))
+
+    async def kick(self, i: discord.Interaction):
+        ui, pid, g = self.ui, self.pid, self.ui.svc.game
+        founded = [pc for pc in g.pacts_of(pid) if pc["founder"] == pid and len(pc["members"]) > 1]
+
+        async def chose_pact(ci: discord.Interaction, pact_id: str):
+            pc = g.pact(pact_id)
+            opts = [discord.SelectOption(label=g.get(m).state_name[:100], value=m)
+                    for m in pc["members"] if m != pid]
+
+            async def chose_member(si: discord.Interaction, tid: str):
+                await ui.confirm_action(si, f"Remove **{g.get(tid).state_name}** from **{pc['name']}**? Their "
+                                            "copy of the pact channel will be deleted.",
+                                        lambda g, now: g.kick_from_pact(pid, pact_id, tid), edit=True)
+
+            await ci.response.edit_message(content=f"Remove whom from **{pc['name']}**?",
+                                           view=self._pick("Choose a member…", opts, chose_member))
+
+        await i.response.edit_message(content="Remove a member from which pact?",
+                                      view=self._pick("Choose a pact…", self._pact_options(founded), chose_pact))
+
+    async def leave(self, i: discord.Interaction):
+        ui, pid, g = self.ui, self.pid, self.ui.svc.game
+
+        async def chose_pact(ci: discord.Interaction, pact_id: str):
+            pc = g.pact(pact_id)
+            await ui.confirm_action(ci, f"Leave **{pc['name']}**? Your copy of its channel will be deleted, and "
+                                        "you'd need a new invitation to rejoin.",
+                                    lambda g, now: g.leave_pact(pid, pact_id), edit=True)
+
+        await i.response.edit_message(content="Leave which pact?",
+                                      view=self._pick("Choose a pact…", self._pact_options(g.pacts_of(pid)),
+                                                      chose_pact))
+
+
 # ---------------------------------------------------------- panel components
 
 class PanelButton(discord.ui.DynamicItem[discord.ui.Button], template=r"panel:b:(?P<what>[a-z_]+)"):
@@ -357,6 +508,8 @@ class UI:
         B = discord.ButtonStyle
         if p is None or phase == "registration":
             view.add_item(PanelButton("name", "Rename my state" if p else "Name my state", B.primary, 0, "✏️"))
+            if p:
+                view.add_item(PanelButton("pacts", "Pacts", B.secondary, 0, "🤝"))
             view.add_item(PanelButton("help", "Help", B.secondary, 0))
             return view
         if phase == "active":
@@ -368,6 +521,8 @@ class UI:
             view.add_item(PanelButton("say", "Public chat", B.secondary, 2, "📣"))
             view.add_item(PanelButton("dm", "Message a state", B.secondary, 2, "✉️"))
             view.add_item(PanelButton("anon", "Anonymous", B.secondary, 2, "🎭"))
+        if phase == "active":
+            view.add_item(PanelButton("pacts", "Pacts", B.secondary, 3, "🤝"))
         view.add_item(PanelButton("help", "Help", B.secondary, 3, "❔"))
         return view
 
@@ -464,6 +619,9 @@ class UI:
                 await i.response.send_message(embed=board_embed(g, pid), ephemeral=True)
         elif what in ("say", "anon"):
             await i.response.send_modal(ChatModal(self, what))
+        elif what == "pacts":
+            await i.response.send_message(pact_summary(g, pid), view=PactMenuView(self, pid), ephemeral=True,
+                                          allowed_mentions=NO_PINGS)
         elif what == "dm":
             others = [p for p in g.state.players.values() if p.id != pid]
             await i.response.send_message("Who do you want to message?", view=TargetView(self, pid, "dm", others),

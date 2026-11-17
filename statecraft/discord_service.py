@@ -93,6 +93,33 @@ class GameService:
             self.server["consoles"][pid] = channel_id
         self.save_server()
 
+    # ---- pact channels: each member has a private copy of each pact channel
+    #   server["pact_channels"][pact_id][pid] = {"channel": id, "hook_id": id, "hook_token": str}
+
+    def pact_channels(self) -> dict:
+        return self.server.setdefault("pact_channels", {})
+
+    def pact_copy(self, pact_id: str, pid: str) -> dict | None:
+        return self.pact_channels().get(pact_id, {}).get(pid)
+
+    def set_pact_copy(self, pact_id: str, pid: str, record: dict | None) -> None:
+        copies = self.pact_channels().setdefault(pact_id, {})
+        if record is None:
+            copies.pop(pid, None)
+            if not copies:
+                self.pact_channels().pop(pact_id, None)
+        else:
+            copies[pid] = record
+        self.save_server()
+
+    def pact_of_channel(self, channel_id: int) -> tuple[str, str] | None:
+        """(pact_id, owner pid) for a pact channel copy."""
+        for pact_id, copies in self.pact_channels().items():
+            for pid, rec in copies.items():
+                if rec["channel"] == channel_id:
+                    return pact_id, pid
+        return None
+
     @staticmethod
     def is_fake(pid: str) -> bool:
         """Test-mode players have no Discord account."""

@@ -4,17 +4,14 @@ The Discord command reference. Update this file whenever a command is added, cha
 
 **Build status (2026-11-17):**
 - **Built:**
-  - Registration: `/join` (console only), `/name` (set or rename), and `/leave`.
-  - **The control panel** (action menu, move grid, target and amount menus, chat text boxes, live status card).
-  - All gameplay actions, `/status` (own and other states), `/board` (text version), `/info`, `/help`, `/panel`, `/notify`, `/say`, `/dm` with the Reply pop-up, `/anon`, `/vote`.
-  - Admin: `setup`, `start`, `status`, `give`, `declare`, `juryscore`, `reload`, `reset`.
-  - Every test-mode command.
-  - The automatic scheduler and the #game-board auto-update.
+  - Every command and panel control in this file, except the items below.
+  - Pacts: anonymous relayed channel copies, Accept/Decline invitations, the panel Pacts menu, and the `/pact` commands.
+  - `/admin cleanup`.
 - **Not built yet:**
-  - Pacts.
-  - `/admin open` and `/admin cleanup`.
-  - The Pillow board image and the "Show range for…" dropdown.
-  - The red outline marking states that can reach you.
+  - The Pillow board image.
+  - The "Show range for…" dropdown.
+  - The red outline marking states that can reach you. In the meantime, the panel card lists which states can reach you, and `/board` shows your range as text.
+  - `/admin open`. It isn't really needed: a new or reset game is already open for `/join`.
 
 Every command is a slash command. Replies are **private** (only the person who ran the command sees them) unless the table says something is posted publicly. Every command, including rejected attempts, is written to the game history log (see `IMPLEMENTATION_PLAN.md` §4b).
 
@@ -111,8 +108,9 @@ Pacts let players form anonymous group chats, such as alliances, by inviting oth
 | `/pact invite pact:<pact> state:<state>` | **Founder only.** Invites a state. The invitee's console gets an invitation with **Accept** / **Decline** buttons, showing the pact name and the founder's state name. |
 | `/pact leave pact:<pact>` | Leaves the pact. Your copy of the channel is deleted, and the other members are told that your state left. |
 | `/pact kick pact:<pact> state:<state>` | Founder only: removes a member. |
-| `/pact members pact:<pact>` | Lists members by state name, with which are alive or destroyed. |
-| `/pact list` | Your pacts and any pending invitations. |
+| `/pact list` | Your pacts, their members (★ marks the founder), and any pending invitations. |
+
+**On the panel:** the **Pacts** button shows the same summary, with **Found a pact**, **Invite a state**, **Remove a member**, and **Leave a pact** buttons. Each opens a menu, and removing or leaving asks Yes/Cancel. Invitations arrive in your console with **Accept** / **Decline** buttons.
 
 **Rules:**
 - Pacts cost nothing, have no cooldown, and are open at all hours, including to eliminated players (jurors keep full social access).
@@ -155,7 +153,7 @@ Jury discussion happens in #jury. It's normal chat, not a command.
 | `/admin juryscore` | After the game: ranks jurors by votes for the winner(s), with ballots, nights, and rate. |
 | `/admin reload` | Reloads `game.json` after you edit it by hand. |
 | `/admin reset` | (Yes/Cancel) Wipes the game for a fresh one. The old history log is kept under a timestamped name. |
-| `/admin cleanup confirm:<true>` | After a game: archives or deletes the console channels and removes game roles. |
+| `/admin cleanup` | (Yes/Cancel) After a game: deletes every console and pact channel (and the extra pact categories) and removes game roles. `game.json` and the history log are kept. |
 
 ## Test mode (`TEST_MODE=1` in `.env` only, admins only)
 
@@ -164,7 +162,7 @@ These let one person run a full game alone on the test server. They are disabled
 | Command | What it does |
 |---|---|
 | `/test addplayers count:<n>` | Registers *n* fake players with generated state names. They have no Discord account, so their console messages go to #statecraft-admin. |
-| `/test as state:<state> command:<text>` | Runs any console command as that state, e.g. `/test as VE attack WE` or `/test as VE say hello`. |
+| `/test as state:<state> command:<text>` | Runs any console command as that state, e.g. `/test as VE attack WE` or `/test as VE say hello`. Pacts work by quoted name: `pact create "Iron Accord"`, `pact invite "Iron Accord" WE`, `pact accept "Iron Accord"`, `pact say "Iron Accord" hi`, `pact leave "Iron Accord"`, `pact kick "Iron Accord" WE`. A fake player's pact messages go to #statecraft-admin. |
 | `/test start` | Starts with fewer than 12 players. |
 | `/test clock offset:<duration>` | Shifts the bot's clock forward (e.g. `+2h`, `+1d`) to test windows, cooldowns, the 2 PM tick, the vote lock, and the info fade without waiting. |
 | `/test tick` | Runs the 2:00 PM daily tick immediately. |

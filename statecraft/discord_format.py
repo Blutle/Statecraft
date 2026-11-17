@@ -157,10 +157,43 @@ def run_text(game: Game, pid: str, text: str, now: datetime) -> Result:
         if verb == "dm" and len(args) >= 2:
             tid, err = target(args[0])
             return game.dm(pid, tid, " ".join(args[1:])) if tid else Result.fail(err)
+        if verb == "pact" and args:
+            return _pact_text(game, pid, args[0].lower(), args[1:])
     except TypeError:
         pass
     return Result.fail("Unknown command. Try: move ne | attack VE | upgrade | gift VE 2 | buyinfo | "
-                       "vote VE | say hi | dm VE hello | anon hi")
+                       "vote VE | say hi | dm VE hello | anon hi | pact create \"Name\" | "
+                       "pact invite \"Name\" VE | pact accept \"Name\" | pact decline \"Name\" | "
+                       "pact say \"Name\" hi | pact leave \"Name\" | pact kick \"Name\" VE")
+
+
+def _pact_text(game: Game, pid: str, sub: str, args: list[str]) -> Result:
+    """`pact ...` for /test as. Pacts are named by their (quoted) name."""
+    def find_pact(name: str):
+        for pc in game.state.pacts.values():
+            if pc["active"] and pc["name"].lower() == name.lower():
+                return pc["id"]
+        return None
+
+    if sub == "create" and args:
+        return game.create_pact(pid, " ".join(args))
+    if not args:
+        return Result.fail("Name the pact, in quotes if it has spaces.")
+    pact_id = find_pact(args[0])
+    if not pact_id:
+        return Result.fail(f"No active pact named '{args[0]}'.")
+    if sub in ("accept", "decline"):
+        return game.respond_to_pact(pid, pact_id, sub == "accept")
+    if sub == "leave":
+        return game.leave_pact(pid, pact_id)
+    if sub == "say" and len(args) >= 2:
+        return game.pact_message(pid, pact_id, " ".join(args[1:]))
+    if sub in ("invite", "kick") and len(args) == 2:
+        t, err = game.find(args[1])
+        if not t:
+            return Result.fail(err)
+        return (game.invite_to_pact if sub == "invite" else game.kick_from_pact)(pid, pact_id, t.id)
+    return Result.fail("Unknown pact command.")
 
 
 def parse_duration(text: str) -> int | None:

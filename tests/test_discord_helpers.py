@@ -33,6 +33,16 @@ class RunTextTests(unittest.TestCase):
         self.assertFalse(run_text(g, "fake1", "move ne", WINDOW).ok)      # cooldown from the attack
         self.assertFalse(run_text(g, "fake1", "fly away", WINDOW).ok)
 
+    def test_pact_text_commands(self):
+        g = game()
+        self.assertTrue(run_text(g, "fake1", 'pact create "Iron Accord"', WINDOW).ok)
+        self.assertTrue(run_text(g, "fake1", 'pact invite "Iron Accord" VE', WINDOW).ok)
+        self.assertTrue(run_text(g, "fake2", 'pact accept "iron accord"', WINDOW).ok)
+        res = run_text(g, "fake2", 'pact say "Iron Accord" hello there', WINDOW)
+        self.assertEqual(res.events[0].data["recipients"], ["fake1"])
+        self.assertFalse(run_text(g, "fake3", 'pact say "Iron Accord" let me in', WINDOW).ok)
+        self.assertTrue(run_text(g, "fake1", 'pact kick "Iron Accord" VE', WINDOW).ok)
+
     def test_actions_respect_clock(self):
         g = game()
         res = run_text(g, "fake1", "upgrade", datetime(2026, 11, 17, 21, 0, tzinfo=CT))

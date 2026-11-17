@@ -23,6 +23,8 @@ DEFAULT_SETTINGS = {
     "info_expire": "20:15",      # purchased information access fades
     "vote_lock": "13:45",        # jury votes lock until the 14:00 tally
     "cooldown_minutes": 15,      # per-player cooldown after every gameplay action
+    "pact_found_limit": 3,       # pacts a player may found (ever, per game)
+    "pact_member_limit": 6,      # pacts a player may belong to at once (including founded)
     "min_players": 12,           # fewest players needed to start (start force bypasses, min 2)
     "spawn_no_cardinal_touch": 1,  # 1 = no two states start directly N/S/E/W of each other
 }
@@ -58,6 +60,8 @@ class GameState:
     gifts_today: list[dict] = field(default_factory=list)
     log: list[dict] = field(default_factory=list)              # public event history
     next_player_num: int = 1
+    pacts: dict[str, dict] = field(default_factory=dict)      # pact id -> pact (see Game.create_pact)
+    next_pact_num: int = 1
     winners: list[str] = field(default_factory=list)
     clock_marker: str | None = None  # scheduler: time up to which events have run          # last survivor, or admin-declared
 
