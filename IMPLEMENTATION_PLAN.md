@@ -303,6 +303,7 @@ These are the ways a living state's owner could be exposed. Each one needs to be
 - States block **movement only**. Nothing blocks attacks or transfers.
 - Targets don't need to be on a straight or diagonal line. Any state inside the range area can be hit.
 - **Range is one number.** It starts at 2, and each upgrade (2 AP) adds 1. A target is in range if `|dx| + |dy| <= range`, meaning a diagonal step costs 2. Diagonal reach is `range // 2`, which goes 1, 1, 2, 2, 3. **This replaces the range table in spec §4.3,** where diagonal range was 1, 2, 3, 4.
+- **Board size (2026-11-17):** the default is ¾ of the player count, rounded down (16 players → 12×12), with a floor of 2 squares per state for tiny games. This replaces spec §3.1's N×N. It is set by `board_scale_pct` (75), and an explicit `board_size` overrides it. Simulations showed it shortens 16-player games by about 2.5 days and roughly doubles the chance of a day-1 kill, while keeping 1 AP/day.
 - Jurors can change their vote. Votes lock at 1:55 PM and are tallied at 2:00 PM.
 - All states start with 0 AP, no matter when the game starts.
 

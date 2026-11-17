@@ -40,8 +40,9 @@ class GeometryTests(unittest.TestCase):
         self.assertEqual(geometry.coord_label(15, 15), "P16")
 
 
-def make_game(n=4, seed=1) -> Game:
+def make_game(n=4, seed=1, size=0) -> Game:
     g = Game(rng=random.Random(seed))
+    g.state.settings["board_size"] = size          # 0 = automatic
     names = ["Republic of Aldren", "Veyran Empire", "Free Cities", "Westhaven", "Iron Dominion", "Kesh"]
     for i in range(n):
         assert g.register(f"player{i + 1}", names[i]).ok
@@ -57,10 +58,23 @@ def place(g: Game, pid: str, x: int, y: int):
 class LifecycleTests(unittest.TestCase):
     def test_board_size_and_unique_placement(self):
         g = make_game(4)
-        self.assertEqual(g.state.board_size, 4)
+        self.assertEqual(g.state.board_size, 3)              # 4 * 3/4
         spots = {(p.x, p.y) for p in g.state.players.values()}
         self.assertEqual(len(spots), 4)
         self.assertTrue(all(p.ap == 0 for p in g.state.players.values()))
+
+    def test_auto_board_size(self):
+        g = Game()
+        sizes = {n: g.auto_board_size(n) for n in (2, 3, 5, 8, 10, 12, 16, 20)}
+        self.assertEqual(sizes, {2: 2, 3: 3, 5: 4, 8: 6, 10: 7, 12: 9, 16: 12, 20: 15})
+
+    def test_explicit_board_size_overrides(self):
+        g = Game()
+        g.state.settings["board_size"] = 10
+        for i in range(4):
+            g.register(f"u{i}", f"State {i}")
+        g.start()
+        self.assertEqual(g.state.board_size, 10)
 
     def test_duplicate_names_rejected(self):
         g = Game()
@@ -83,7 +97,7 @@ class LifecycleTests(unittest.TestCase):
 
 class ActionTests(unittest.TestCase):
     def setUp(self):
-        self.g = make_game(4)
+        self.g = make_game(4, size=4)
         # Spread everyone out on the 4x4 board, then give AP.
         place(self.g, "p1", 0, 0)
         place(self.g, "p2", 2, 0)
@@ -195,7 +209,7 @@ class DayAndJuryTests(unittest.TestCase):
 
 class JuryScoreTests(unittest.TestCase):
     def test_scores_rank_votes_for_winner(self):
-        g = make_game(4)
+        g = make_game(4, size=4)
         place(g, "p1", 0, 0); place(g, "p2", 1, 0); place(g, "p3", 2, 0); place(g, "p4", 3, 3)
         g.get("p1").ap = 20
         g.state.day = 1

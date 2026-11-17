@@ -164,6 +164,14 @@ class Game:
                 return c
         raise RuntimeError("Ran out of markers")
 
+    def auto_board_size(self, n: int) -> int:
+        """board_scale_pct of the player count, rounded down (75% -> 16 players
+        on 12x12), but never fewer than 2 squares per state (matters for tiny games)."""
+        size = n * self.s["board_scale_pct"] // 100
+        while size * size < n * 2:
+            size += 1
+        return size
+
     @recorded("start")
     def start(self) -> Result:
         if self.state.phase != "registration":
@@ -172,7 +180,7 @@ class Game:
         if len(players) < 2:
             return Result.fail("At least 2 players are needed to start.")
         n = len(players)
-        size = self.s.get("board_size") or n
+        size = self.s.get("board_size") or self.auto_board_size(n)
         if size * size < n * 2:
             return Result.fail(f"A {size}x{size} board is too small for {n} states.")
         self.state.board_size = size
