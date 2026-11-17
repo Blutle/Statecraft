@@ -20,6 +20,11 @@ Every command is a slash command. Replies are **private** (only the person who r
 - **Your console:** everything a player does. Console commands used anywhere else are rejected, because a slash command in a public channel would show who used it.
 - **Anywhere:** admin commands (`ADMIN_IDS` in `.env` only).
 
+**Other apps:**
+- **"Use External Apps" is denied** in every game channel, console, and pact channel. An app a player installed on their own Discord account would post its response under their real name, which would break the masking.
+- **Slash commands are disabled** in the read-only channels.
+- **Other bots' commands** can only be limited per bot, by a server admin under **Server Settings → Integrations → [bot] → Manage**. The simplest option is to not add other bots to the game server.
+
 **Confirmation:** every command that **spends AP** (`/move`, `/attack`, `/upgrade`, `/gift`, `/buyinfo`) or **can't be undone** (`/leave`, `/admin reset`, `/admin declare`) first shows a preview with **Yes** and **Cancel** buttons:
 - Only the person who ran it can answer, and unanswered prompts expire after 2 minutes with nothing spent.
 - An action that would fail anyway (out of range, on cooldown, not enough AP, window closed) is rejected immediately, with no prompt. The rejected attempt is still logged.

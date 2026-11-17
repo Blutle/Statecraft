@@ -41,14 +41,27 @@ CHANNELS = {
 
 # Discord only lets a bot set channel permissions it holds itself, so every
 # permission named in these overwrites must be in the bot's invite (REQUIRED).
+# The bot keeps every permission it sets for players: once @everyone is
+# denied something in a category, the bot (also in @everyone) loses it there
+# too unless its own overwrite allows it, and then Discord won't let it set
+# that permission on the channels inside.
 BOT_PERMS = dict(view_channel=True, send_messages=True, embed_links=True, attach_files=True,
                  read_message_history=True, mention_everyone=True, manage_messages=True,
-                 manage_channels=True, manage_webhooks=True)
+                 manage_channels=True, manage_webhooks=True, use_application_commands=True,
+                 use_external_apps=True, send_messages_in_threads=True, create_public_threads=True,
+                 create_private_threads=True, add_reactions=True)
+# Players can't post in read-only channels, so no slash commands there either.
+# "Use External Apps" is denied everywhere: an app a player installed on their
+# own account would post its response under their real Discord name.
 READ_ONLY = dict(view_channel=True, read_message_history=True, send_messages=False,
                  send_messages_in_threads=False, create_public_threads=False,
-                 create_private_threads=False, add_reactions=True)
+                 create_private_threads=False, add_reactions=True,
+                 use_application_commands=False, use_external_apps=False)
 HIDDEN = dict(view_channel=False)
-MEMBER = dict(view_channel=True, read_message_history=True, send_messages=True, add_reactions=True)
+MEMBER = dict(view_channel=True, read_message_history=True, send_messages=True, add_reactions=True,
+              use_external_apps=False)
+# Per-player overwrites on consoles and pact channel copies
+PLAYER_PRIVATE = dict(use_external_apps=False)
 
 
 def _overwrites(guild: discord.Guild, access: str, roles: dict[str, discord.Role]) -> dict:
@@ -83,6 +96,7 @@ REQUIRED = discord.Permissions(
     send_messages=True, embed_links=True, attach_files=True, read_message_history=True,
     mention_everyone=True, manage_messages=True, add_reactions=True, use_application_commands=True,
     create_public_threads=True, create_private_threads=True, send_messages_in_threads=True,
+    use_external_apps=True,
 )
 
 
@@ -160,6 +174,19 @@ async def ensure_server(guild: discord.Guild, path: Path, echo=None) -> list[str
     else:
         report.append("found #public-chat webhook")
     data["public_chat_webhook_id"] = hook.id
+
+    # Existing consoles and pact copies: make sure players can't use external apps there
+    patched = 0
+    for cid in [data.get("console_category_id")] + saved.get("pact_categories", []):
+        cat = guild.get_channel(cid or 0)
+        for ch in (cat.channels if cat else []):
+            for target, ow in ch.overwrites.items():
+                if isinstance(target, discord.Member) and target != guild.me and ow.use_external_apps is not False:
+                    ow.update(**PLAYER_PRIVATE)
+                    await ch.set_permissions(target, overwrite=ow, reason="Statecraft setup (repair)")
+                    patched += 1
+    if patched:
+        report.append(f"blocked external apps for {patched} player channel(s)")
 
     # Keep existing console channel records (created later by /join)
     data["consoles"] = saved.get("consoles", {})

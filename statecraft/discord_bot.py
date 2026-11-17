@@ -168,7 +168,8 @@ class Router:
                         guild.me: discord.PermissionOverwrite(**discord_setup.BOT_PERMS),
                         member: discord.PermissionOverwrite(view_channel=True, send_messages=True,
                                                             read_message_history=True, add_reactions=True,
-                                                            attach_files=True, embed_links=True)},
+                                                            attach_files=True, embed_links=True,
+                                                            **discord_setup.PLAYER_PRIVATE)},
             reason="Statecraft pact")
         hook = await ch.create_webhook(name="Statecraft Pact Relay", reason="Statecraft pact")
         self.svc.set_pact_copy(pact_id, pid, {"channel": ch.id, "hook_id": hook.id, "hook_token": hook.token})
@@ -487,7 +488,7 @@ def register_commands(bot: StatecraftBot) -> None:
             guild.me: discord.PermissionOverwrite(**discord_setup.BOT_PERMS),
             member: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True,
                                                 use_application_commands=True, add_reactions=True,
-                                                send_messages_in_threads=True),
+                                                send_messages_in_threads=True, **discord_setup.PLAYER_PRIVATE),
         }
         return await guild.create_text_channel(f"console-{secrets.token_hex(2)}", category=cat,
                                                overwrites=overwrites, reason="Statecraft console")
