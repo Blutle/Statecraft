@@ -47,10 +47,10 @@ class GameState:
     jury_votes: dict[str, str] = field(default_factory=dict)  # juror id -> target id
     jury_history: list[dict] = field(default_factory=list)    # past ballots (admin-only)
     info_access: list[str] = field(default_factory=list)      # ids with access today
-    transfers_today: list[dict] = field(default_factory=list)
+    gifts_today: list[dict] = field(default_factory=list)
     log: list[dict] = field(default_factory=list)              # public event history
     next_player_num: int = 1
-    winner: str | None = None
+    winners: list[str] = field(default_factory=list)          # last survivor, or admin-declared
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -62,7 +62,15 @@ class GameState:
             raise ValueError(f"Unsupported schema_version {version!r} (expected {SCHEMA_VERSION})")
         data = dict(data)
         data["players"] = {pid: Player(**p) for pid, p in data.get("players", {}).items()}
-        data["settings"] = {**DEFAULT_SETTINGS, **data.get("settings", {})}
+        if "transfers_today" in data:                       # renamed to gifts
+            data["gifts_today"] = data.pop("transfers_today")
+        if "winner" in data:                                # single winner -> list
+            w = data.pop("winner")
+            data["winners"] = [w] if w else []
+        data.pop("draw_votes", None)                        # removed draw feature
+        data.pop("drawn", None)
+        settings = {k: v for k, v in data.get("settings", {}).items() if k in DEFAULT_SETTINGS}
+        data["settings"] = {**DEFAULT_SETTINGS, **settings}
         return cls(**data)
 
 

@@ -1,7 +1,7 @@
 """High-speed simulated games with invariant checking.
 
 Random bots play complete games through the real Game API. Bots mix sensible
-play (attack, chase, upgrade, transfer, buy info, jury votes) with deliberately
+play (attack, chase, upgrade, gift, buy info, jury votes) with deliberately
 illegal actions. After every call the simulator checks invariants: what an
 accepted action must have changed, that rejected actions changed nothing, AP
 bookkeeping, board integrity, and identity masking in public text.
@@ -134,8 +134,9 @@ class Sim:
         alive = self.g.alive_players()
         if st.phase == "active" and len(alive) < 2:
             self.fail("game still active with fewer than 2 survivors")
-        if st.phase == "ended" and (len(alive) != 1 or st.winner != alive[0].id):
-            self.fail("ended game has wrong winner/survivors")
+        if st.phase == "ended":
+            if len(alive) != 1 or st.winners != [alive[0].id]:
+                self.fail("ended game has wrong winner/survivors")
 
     # ------------------------------------------------------------- actions
 
@@ -173,9 +174,9 @@ class Sim:
             if choice == 1:
                 return self.call("attack-self", g.attack(p.id, p.id), False, before)
             if choice == 2:
-                return self.call("transfer-too-much", g.transfer(p.id, (in_range or enemies)[0].id, p.ap + 1), False, before)
+                return self.call("gift-too-much", g.gift(p.id, (in_range or enemies)[0].id, p.ap + 1), False, before)
             if choice == 3:
-                return self.call("transfer-zero", g.transfer(p.id, enemies[0].id, 0), False, before)
+                return self.call("gift-zero", g.gift(p.id, enemies[0].id, 0), False, before)
             if choice == 4:
                 return self.call("vote-while-alive", g.vote(p.id, enemies[0].id), False, before)
             if choice == 5:
@@ -212,15 +213,15 @@ class Sim:
             amt = self.rng.randint(1, max(1, p.ap))
             sender_before, recv_before = p.ap, t.ap
             buyers = set(g.state.info_access) - {p.id, t.id}
-            res = self.call("transfer", g.transfer(p.id, t.id, amt), None, before)
+            res = self.call("gift", g.gift(p.id, t.id, amt), None, before)
             if res.ok:
                 if p.ap != sender_before - amt or t.ap != recv_before + amt:
-                    self.fail("transfer amounts wrong")
+                    self.fail("gift amounts wrong")
                 recipients = set(res.events[0].private)
                 if recipients != {t.id} | buyers:
-                    self.fail(f"transfer notice went to {recipients}, expected {({t.id} | buyers)}")
+                    self.fail(f"gift notice went to {recipients}, expected {({t.id} | buyers)}")
                 if res.events[0].public:
-                    self.fail("transfer was announced publicly")
+                    self.fail("gift was announced publicly")
             return res
         if roll < 0.71:
             res = self.call("buyinfo", g.buy_info(p.id), None, before)
@@ -284,8 +285,8 @@ class Sim:
             if p.ap != expected:
                 self.fail(f"{p.state_name} AP after day tick {p.ap}, expected {expected}")
             self.expected_total_ap += p.ap - ap_before[p.id]
-        if g.state.jury_votes or g.state.info_access or g.state.transfers_today:
-            self.fail("day tick did not reset votes/info/transfers")
+        if g.state.jury_votes or g.state.info_access or g.state.gifts_today:
+            self.fail("day tick did not reset votes/info/gifts")
         return res
 
     # ------------------------------------------------------- alliance mode
@@ -341,13 +342,67 @@ class Sim:
                  if geometry.on_board(m.x + dx, m.y + dy, g.state.board_size)
                  and not g.occupant(m.x + dx, m.y + dy)]
         if not legal or m.ap < 1:
-            return
+            return False
         d = min(legal, key=lambda k: geometry.distance(
             m.x + geometry.DIRECTIONS[k][0], m.y + geometry.DIRECTIONS[k][1], target.x, target.y))
-        self.act("regroup", g.move(m.id, d), self.snapshot(), g.s["move_cost"])
+        return self.act("regroup", g.move(m.id, d), self.snapshot(), g.s["move_cost"]).ok
+
+    def ruthless_day(self):
+        """Alliances spend everything, every day: chain AP into whoever can
+        reach the weakest enemy and attack until out of AP or targets; if
+        nothing is reachable, march the closest member forward (upgrading
+        when boxed in). Same 4% daily betrayal chance as alliance mode."""
+        g = self.g
+        self.rng.shuffle(self.alliances)
+        for grp in list(self.alliances):
+            members = [g.get(i) for i in grp if g.get(i).alive]
+            if len(members) > 1 and self.rng.random() < 0.04:
+                traitor = self.rng.choice(members)
+                victims = [m for m in members if m.id != traitor.id and g.in_range(traitor, m)]
+                if traitor.ap > 0 and victims:
+                    self.act("betrayal", g.attack(traitor.id, self.rng.choice(victims).id),
+                             self.snapshot(), g.s["attack_cost"])
+                    grp.remove(traitor.id)
+                    self.alliances.append([traitor.id])
+                    self.stats["~betrayals"] += 1
+            for _ in range(100):
+                if g.state.phase != "active":
+                    return
+                members = [g.get(i) for i in grp if g.get(i).alive]
+                if not members:
+                    break
+                enemies = [e for e in g.alive_players() if e.id not in grp]
+                if not enemies:
+                    if grp in self.alliances:
+                        self.alliances.remove(grp)
+                        self.alliances += [[m.id] for m in members]
+                        self.stats["~alliances_dissolved"] += 1
+                    break
+                pairs = [(e.hp, self.rng.random(), m, e) for m in members for e in enemies
+                         if g.in_range(m, e) and self.chain_pool(m, members) > 0]
+                if pairs:
+                    killable = [t for t in pairs if self.chain_pool(t[2], members) >= t[3].hp]
+                    _, _, hitter, target = min(killable or pairs, key=lambda t: (t[0], t[1]))
+                    self.pool_to(hitter, members, need=target.hp)
+                    while hitter.ap > 0 and target.alive and g.state.phase == "active":
+                        self.act("chain-attack", g.attack(hitter.id, target.id), self.snapshot(),
+                                 g.s["attack_cost"])
+                    continue
+                movers = [m for m in members if m.ap > 0]
+                if not movers:
+                    break
+                def gap(m):
+                    return min(geometry.distance(m.x, m.y, e.x, e.y) for e in enemies)
+                scout = min(movers, key=gap)
+                nearest = min(enemies, key=lambda e: geometry.distance(scout.x, scout.y, e.x, e.y))
+                if not self.step_toward(scout, nearest):
+                    if scout.ap >= g.s["upgrade_cost"]:
+                        self.act("upgrade", g.upgrade(scout.id), self.snapshot(), g.s["upgrade_cost"])
+                    else:
+                        break
 
     def pool_to(self, hitter, members, need: int):
-        """Daisy-chain AP to the hitter: BFS over allies by transfer range,
+        """Daisy-chain AP to the hitter: BFS over allies by gift range,
         then each donor's AP hops along the chain toward the hitter."""
         g = self.g
         parent = {hitter.id: None}
@@ -369,7 +424,7 @@ class Sim:
             cur = donor_id
             while cur != hitter.id:
                 nxt = parent[cur]
-                self.act("chain-transfer", g.transfer(cur, nxt, amount), self.snapshot())
+                self.act("chain-gift", g.gift(cur, nxt, amount), self.snapshot())
                 cur = nxt
                 hops += 1
             self.stats["~chain_hops"] += hops
@@ -459,10 +514,10 @@ class Sim:
                 self.fail(f"no winner after {MAX_DAYS} days")
             self.next_day()
             self.dead_actions()
-            if self.style == "alliance":
+            if self.style in ("alliance", "ruthless"):
                 if g.state.day == 1:
                     self.form_alliances()
-                self.alliance_day()
+                self.alliance_day() if self.style == "alliance" else self.ruthless_day()
                 continue
             order = g.alive_players()
             self.rng.shuffle(order)
@@ -478,17 +533,18 @@ class Sim:
             self.check_board()
 
         # After the game ends, nothing may happen
-        w = g.get(g.state.winner)
+        winners = [g.get(i) for i in g.winners()]
+        w = winners[0]
         before = self.snapshot()
         self.call("post-move", g.move(w.id, "n"), False, before)
         self.call("post-upgrade", g.upgrade(w.id), False, before)
         self.call("post-nextday", g.next_day(), False, before)
         self.call("post-say", g.say(w.id, "gg"), False, before)
         over = [e for e in g.state.log if e["kind"] == "GAME_OVER"]
-        if len(over) != 1 or w.owner_name not in over[0]["text"]:
+        if len(over) != 1 or any(x.owner_name not in over[0]["text"] for x in winners):
             self.fail("missing or wrong GAME_OVER announcement")
         elims = [e for e in g.state.log if e["kind"] == "ELIMINATION"]
-        if len(elims) != n - 1:
+        if len(elims) != n - len(winners):
             self.fail(f"{len(elims)} eliminations logged for {n} players")
         jury_ap = sum(int(part.split("(+")[1].split(" ")[0])
                       for e in g.state.log if e["kind"] == "JURY_RESULT"
@@ -496,7 +552,8 @@ class Sim:
         self.stats["~jury_ap_awarded"] += jury_ap
         self.stats["~history_records"] += len(self.records)
         deaths = Counter(p.eliminated_on_day for p in g.state.players.values() if not p.alive)
-        return {"players": n, "days": g.state.day, "winner": w.state_name,
+        return {"players": n, "days": g.state.day,
+                "winner": w.state_name,
                 "upgrades": w.range_upgrades, "stats": self.stats,
                 "first_death": min(deaths), "day1_kills": deaths.get(1, 0),
                 "worst_day": max(deaths.values())}
@@ -507,9 +564,10 @@ def main():
     ap.add_argument("--games", type=int, default=10)
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--verbose", action="store_true")
-    ap.add_argument("--style", choices=["mixed", "aggressive", "alliance"], default="mixed",
+    ap.add_argument("--style", choices=["mixed", "aggressive", "alliance", "ruthless"], default="mixed",
                     help="mixed: varied play, sometimes saving AP; aggressive: always attack or chase; "
-                         "alliance: blocs daisy-chain AP into one attacker, with occasional betrayal")
+                         "alliance: blocs daisy-chain AP into one attacker, one strike a day, with "
+                         "occasional betrayal; ruthless: alliances spend everything every day")
     ap.add_argument("--players", type=int, default=None, help="fixed player count")
     ap.add_argument("--jury", choices=["random", "bloc"], default="random",
                     help="random: each juror votes at random; bloc: jurors coordinate on one state")

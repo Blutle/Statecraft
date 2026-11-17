@@ -309,13 +309,17 @@ class Game:
         w = alive[0]
         self._archive_votes(tallied=False)          # ballots cast but never tallied
         self.state.phase = "ended"
-        self.state.winner = w.id
+        self.state.winners = [w.id]
         return [Event(
             "GAME_OVER",
             public=f"{w.state_name} is the last state standing and wins Statecraft! "
                    f"It was controlled by {w.owner_name}.",
             ping="mandatory",
         )]
+
+    def winners(self) -> list[str]:
+        """Ids of the winning states: the last survivor, or whoever the admin declared."""
+        return list(self.state.winners)
 
     @recorded("upgrade")
     def upgrade(self, pid: str) -> Result:
@@ -329,26 +333,26 @@ class Game:
         return self._done(Result(True, f"Range is now {r}. AP left: {p.ap}.", [Event(
             "UPGRADE", public=f"{p.state_name} increased its range to {r}.", ping="opt_in")]))
 
-    @recorded("transfer")
-    def transfer(self, pid: str, tid: str, amount: int) -> Result:
+    @recorded("gift")
+    def gift(self, pid: str, tid: str, amount: int) -> Result:
         if amount < 1:
-            return Result.fail("You must transfer at least 1 AP.")
+            return Result.fail("You must gift at least 1 AP.")
         p, err = self._actor(pid, amount)
         if err:
             return Result.fail(err)
-        t, err = self._target(p, tid, "transfer AP to")
+        t, err = self._target(p, tid, "gift AP to")
         if err:
             return Result.fail(err)
         p.ap -= amount
         t.ap += amount
-        self.state.transfers_today.append({"from": p.id, "to": t.id, "amount": amount})
-        line = f"{p.state_name} -> {t.state_name}: {amount} AP"
-        private = {t.id: f"You received {amount} AP from {p.state_name}. You now have {t.ap} AP."}
+        self.state.gifts_today.append({"from": p.id, "to": t.id, "amount": amount})
+        line = f"{p.state_name} gifted {t.state_name} {amount} AP"
+        private = {t.id: f"{p.state_name} gifted you {amount} AP. You now have {t.ap} AP."}
         for buyer in self.state.info_access:
             if buyer not in (p.id, t.id):
                 private[buyer] = f"[Info] {line}"
-        return self._done(Result(True, f"Sent {amount} AP to {t.state_name}. AP left: {p.ap}.",
-                                 [Event("TRANSFER", private=private)]))
+        return self._done(Result(True, f"Gifted {amount} AP to {t.state_name}. AP left: {p.ap}.",
+                                 [Event("GIFT", private=private)]))
 
     @recorded("buy_info")
     def buy_info(self, pid: str) -> Result:
@@ -363,16 +367,16 @@ class Game:
         return self._done(Result(
             True,
             f"Information access purchased for the rest of Day {self.state.day}. AP left: {p.ap}.\n"
-            + self.transfer_report(),
+            + self.gift_report(),
             [Event("INFO_PURCHASE", public=f"{p.state_name} purchased information access.", ping="opt_in")],
         ))
 
-    def transfer_report(self) -> str:
-        if not self.state.transfers_today:
-            return f"No AP transfers so far on Day {self.state.day}."
-        lines = [f"AP transfers on Day {self.state.day}:"]
-        for tr in self.state.transfers_today:
-            lines.append(f"  {self.get(tr['from']).state_name} -> {self.get(tr['to']).state_name}: {tr['amount']} AP")
+    def gift_report(self) -> str:
+        if not self.state.gifts_today:
+            return f"No AP gifts so far on Day {self.state.day}."
+        lines = [f"AP gifts on Day {self.state.day}:"]
+        for gf in self.state.gifts_today:
+            lines.append(f"  {self.get(gf['from']).state_name} gifted {self.get(gf['to']).state_name} {gf['amount']} AP")
         return "\n".join(lines)
 
     @recorded("vote")
@@ -422,7 +426,7 @@ class Game:
             self._archive_votes(tallied=True)
 
         self.state.info_access = []
-        self.state.transfers_today = []
+        self.state.gifts_today = []
         self.state.day += 1
         for p in self.alive_players():
             p.ap += self.s["daily_ap"]
@@ -452,7 +456,8 @@ class Game:
             if p.alive:
                 continue
             ballots = [b for b in self.state.jury_history if b["juror"] == p.id and b["tallied"]]
-            for_winner = sum(1 for b in ballots if b["target"] == self.state.winner)
+            winners = set(self.winners())
+            for_winner = sum(1 for b in ballots if b["target"] in winners)
             nights = final_day - p.eliminated_on_day
             rows.append({
                 "player": p, "for_winner": for_winner, "ballots": len(ballots), "nights": nights,
@@ -462,6 +467,25 @@ class Game:
         return rows
 
     # ------------------------------------------------------------------ admin
+
+    @recorded("admin_declare_winners")
+    def declare_winners(self, pids: list[str]) -> Result:
+        """Admin: end the game now with one or more surviving states as winners
+        (e.g. a draw the survivors agreed to). All winners are revealed."""
+        if self.state.phase != "active":
+            return Result.fail("The game is not in progress.")
+        if not pids or len(set(pids)) != len(pids):
+            return Result.fail("Name one or more different states.")
+        chosen = [self.get(i) for i in pids]
+        if any(p is None or not p.alive for p in chosen):
+            return Result.fail("Only surviving states can be declared winners.")
+        self._archive_votes(tallied=False)
+        self.state.phase = "ended"
+        self.state.winners = list(pids)
+        names = "; ".join(f"{p.state_name} (controlled by {p.owner_name})" for p in chosen)
+        verb = "is declared the winner" if len(chosen) == 1 else "are declared joint winners"
+        return self._done(Result(True, "Game ended.", [Event(
+            "GAME_OVER", public=f"The game is over. {names} {verb} of Statecraft!", ping="mandatory")]))
 
     @recorded("admin_give_ap")
     def give_ap(self, pid: str, amount: int) -> Result:

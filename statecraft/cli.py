@@ -31,15 +31,15 @@ LOOKING
   board                         Show the board (with your range marked ':')
   states                        Public state list
   status                        Your private status (AP, etc.)
-  info                          Re-show today's AP transfers (needs info access)
+  info                          Re-show today's AP gifts (needs info access)
   log [n]                       Last n public events (default 15)
 
 ACTIONS (current player)
   move <dir>                    n, ne, e, se, s, sw, w, nw          (1 AP)
   attack <state>                Deal 1 damage to a state in range   (1 AP)
   upgrade                       Range +1                            (2 AP)
-  transfer <state> <amount>     Give AP to a state in range         (amount)
-  buyinfo                       See today's AP transfers            (1 AP)
+  gift <state> <amount>         Give AP to a state in range         (amount)
+  buyinfo                       See today's AP gifts                (1 AP)
   vote <state>                  Jury only: vote for a surviving state
 
 MESSAGES (free, logged in full, including anonymous posts' real author)
@@ -50,7 +50,8 @@ MESSAGES (free, logged in full, including anonymous posts' real author)
 TIME / ADMIN
   nextday                       End the day: jury tally, then +1 AP to survivors
   give <player> <amount>        Admin: add (or remove, if negative) AP
-  juryscore                     Admin: after the game, rank jurors by votes for the winner
+  declare <state> [state...]    Admin: end the game with these survivors as (joint) winners
+  juryscore                     Admin: after the game, rank jurors by votes for the winner(s)
   history [n]                   Admin: last n records of the full history log (default 10)
   help                          This text
   quit                          Exit (the game is saved after every change)
@@ -215,7 +216,7 @@ class CLI:
         if pid not in self.game.state.info_access:
             print("You don't have information access today. Use 'buyinfo' (1 AP).")
             return
-        print(self.game.transfer_report())
+        print(self.game.gift_report())
 
     def cmd_log(self, a):
         n = int(a[0]) if a and a[0].isdigit() else 15
@@ -242,16 +243,16 @@ class CLI:
         if pid:
             self.show(self.game.upgrade(pid))
 
-    def cmd_transfer(self, a):
+    def cmd_gift(self, a):
         pid = self._me()
         if not pid:
             return
         if len(a) < 2 or not a[-1].lstrip("-").isdigit():
-            print("Usage: transfer <state> <amount>")
+            print("Usage: gift <state> <amount>")
             return
         t = self._find(" ".join(a[:-1]))
         if t:
-            self.show(self.game.transfer(pid, t.id, int(a[-1])))
+            self.show(self.game.gift(pid, t.id, int(a[-1])))
 
     def cmd_buyinfo(self, a):
         pid = self._me()
@@ -264,6 +265,24 @@ class CLI:
             t = self._find(" ".join(a))
             if t:
                 self.show(self.game.vote(pid, t.id))
+
+    def cmd_declare(self, a):
+        confirm = bool(a) and a[-1].lower() == "confirm"
+        names = a[:-1] if confirm else a
+        if not names:
+            print("Usage: declare <state> [state...] confirm   (quote multi-word names)")
+            return
+        chosen = []
+        for q in names:
+            p = self._find(q)
+            if not p:
+                return
+            chosen.append(p)
+        if not confirm:
+            listed = ", ".join(p.state_name for p in chosen)
+            print(f"This ends the game with winner(s): {listed}. Add 'confirm' to the end to do it.")
+            return
+        self.show(self.game.declare_winners([p.id for p in chosen]))
 
     def cmd_nextday(self, a):
         self.show(self.game.next_day())
@@ -304,8 +323,8 @@ class CLI:
         if not rows:
             print("Jury scores are available once the game has ended.")
             return
-        winner = self.game.get(self.game.state.winner)
-        print(f"[Admin only] Votes for the winner, {winner.state_name}:")
+        names = ", ".join(self.game.get(w).state_name for w in self.game.winners())
+        print(f"[Admin only] Votes for the winner(s): {names}")
         print(f"  {'Player':<14} {'State':<{render_text._w(self.game)}} {'For winner':>10} {'Ballots':>8} {'Nights':>7} {'Rate':>6}")
         for r in rows:
             p = r["player"]

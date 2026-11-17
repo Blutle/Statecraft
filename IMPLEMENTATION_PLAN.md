@@ -23,7 +23,7 @@ store.py                    ← JSON load/save (atomic)
 
 - **The rules engine never imports discord.py.** Every action takes the acting player's ID and a `now` timestamp, and returns a `Result`.
 - A `Result` holds `ok`, an error message if rejected, and a list of **Events** describing what happened.
-- Each Event has a type (`MOVE`, `ATTACK`, `ELIMINATION`, `TRANSFER`, `INFO_PURCHASE`, `DAILY_AP`, `JURY_RESULT`, `GAME_OVER`, …), public text, private text addressed to specific players, and a ping level (`mandatory`, `opt_in`, `none`).
+- Each Event has a type (`MOVE`, `ATTACK`, `ELIMINATION`, `GIFT`, `INFO_PURCHASE`, `DAILY_AP`, `JURY_RESULT`, `GAME_OVER`, …), public text, private text addressed to specific players, and a ping level (`mandatory`, `opt_in`, `none`).
 - The CLI prints events. The Discord bot routes them to the right channels and roles. Because the bot only routes what the engine returns, we avoid writing two copies of the game rules.
 
 ### 1.2 Time is injected, never read directly
@@ -49,8 +49,8 @@ store.py                    ← JSON load/save (atomic)
 
 The spec allows "permission-isolated records." The simplest version:
 
-- On purchase, the bot posts **today's** transfer log (sender, receiver, amount) to the purchaser's private console.
-- Until 8 PM, the bot also forwards each new transfer to every console with active access.
+- On purchase, the bot posts **today's** gift log (sender, receiver, amount) to the purchaser's private console.
+- Until 8 PM, the bot also forwards each new gift to every console with active access.
 - There is no shared `#info` channel, so there is no message history to leak, and nothing to revoke at 8 PM: the forwarding simply stops.
 
 ---
@@ -94,7 +94,7 @@ This extends the spec's example. Fields marked ★ are new.
   },
   "jury_votes": { "juror_id": "target_id" },    // reset at each tally
   "info_access": { "player_id": "expires_iso" },// ★ dict instead of list
-  "transfers_today": [                          // ★ feeds the info market
+  "gifts_today": [                                // ★ feeds the info market
     { "time": "...", "from": "id", "to": "id", "amount": 2 }
   ],
   "events": [ ]                                 // ★ append-only audit log
@@ -114,7 +114,7 @@ statecraft/
 ├── models.py          # dataclasses: Player, GameState, Event, Result
 ├── store.py           # JSON load/save, atomic replace, backup, schema check
 ├── game.py            # all rules: register, start, move, attack, upgrade,
-│                      #   transfer, buy_info, vote, end
+│                      #   gift, buy_info, vote, declare_winners
 ├── schedule.py        # window open/closed, due events, daily tick, 8 PM close
 ├── geometry.py        # coordinates, queen-line range checks, adjacency
 ├── render_text.py     # ASCII board + legend (CLI)
@@ -188,14 +188,14 @@ statecraft/
 - [ ] Move (1 AP)
 - [ ] Attack (1 AP): the target must be alive and in range. Handle elimination, and check for victory.
 - [ ] Upgrade range (2 AP)
-- [ ] Transfer AP (amount sent): the target must be alive and in range, and the amount must be ≥ 1. Record it in `transfers_today`.
+- [ ] Gift AP (amount sent): the target must be alive and in range, and the amount must be ≥ 1. Record it in `gifts_today`.
 - [ ] Buy info (1 AP): set `info_access[player]` to expire at today's 8 PM, and emit a public announcement
 - [ ] Rejected actions change **nothing**, and that includes the cooldown
 
 **1e. Schedule**
 - [ ] `is_window_open(now)` and `next_window_open(now)`
 - [ ] `run_due_events(now)`, in this order:
-  - **2 PM:** tally jury votes (`votes // 3` AP each), announce the totals, clear the votes, give daily AP to living states, increment the day, clear `transfers_today`
+  - **2 PM:** tally jury votes (`votes // 3` AP each), announce the totals, clear the votes, give daily AP to living states, increment the day, clear `gifts_today`
   - **8 PM:** expire info access, open jury voting
 - [ ] `vote(juror_id, target_id, now)`: only eliminated players can vote, from 8:00 PM until votes lock at **1:55 PM** (`vote_lock` setting), and only for a living target. Jurors may change their vote until the lock; the latest vote counts. The tally runs at 2:00 PM.
 
@@ -240,7 +240,7 @@ statecraft/
 - [ ] `/admin start`: place the states, post the board, and announce the state names (without owners)
 
 **3d. Console commands** (rejected outside the player's own console)
-- [ ] `/move direction`, `/attack state`, `/upgrade`, `/transfer state amount`, `/buyinfo`
+- [ ] `/move direction`, `/attack state`, `/upgrade`, `/gift state amount`, `/buyinfo`
 - [ ] `/status`: private AP, cooldown remaining, position, range
 - [ ] `/say message` → `#diplomacy` via the webhook, shown as the state name
 - [ ] `/dm state message` → the recipient's console, labeled with the sending state
@@ -252,8 +252,8 @@ statecraft/
 **3e. Event routing**
 - [ ] Attack or elimination → `#action-log` with a `@Statecraft-Players` ping (one combined message if the attack eliminates)
 - [ ] Move or upgrade → `#action-log` with a `@Statecraft-Updates` ping
-- [ ] Info purchase → `#action-log`; the transfer log goes to the buyer's console
-- [ ] Transfer → private notices to both consoles, plus forwarding to active info buyers
+- [ ] Info purchase → `#action-log`; the gift log goes to the buyer's console
+- [ ] Gift → private notices to both consoles, plus forwarding to active info buyers
 - [ ] Elimination → reveal the owner, grant the Jury role, remove the Players-only perms for gameplay
 - [ ] Board message edited in place after every public change
 
@@ -300,10 +300,12 @@ These are the ways a living state's owner could be exposed. Each one needs to be
 ## 6. Rules Decisions
 
 **Decided (2026-11-17):**
-- States block **movement only**. Nothing blocks attacks or transfers.
+- States block **movement only**. Nothing blocks attacks or gifts.
 - Targets don't need to be on a straight or diagonal line. Any state inside the range area can be hit.
 - **Range is one number.** It starts at 2, and each upgrade (2 AP) adds 1. A target is in range if `|dx| + |dy| <= range`, meaning a diagonal step costs 2. Diagonal reach is `range // 2`, which goes 1, 1, 2, 2, 3. **This replaces the range table in spec §4.3,** where diagonal range was 1, 2, 3, 4.
 - **Board size (2026-11-17):** the default is ¾ of the player count, rounded down (16 players → 12×12), with a floor of 2 squares per state for tiny games. This replaces spec §3.1's N×N. It is set by `board_scale_pct` (75), and an explicit `board_size` overrides it. Simulations showed it shortens 16-player games by about 2.5 days and roughly doubles the chance of a day-1 kill, while keeping 1 AP/day.
+- **No in-game draws (2026-11-17):** with prize money involved, survivors agree to a draw verbally and the admin ends the game with `declare <state> [state...] confirm`. That ends the game with one or more joint winners and reveals each one. Juror scoring counts votes for any declared winner. `game.json` stores `winners` as a list.
+- **Naming (2026-11-17):** "transfer" is now **"gift"** everywhere (`gift <state> <amount>`, `gifts_today`, the `GIFT` event). Old saves are converted when loaded.
 - Jurors can change their vote. Votes lock at 1:55 PM and are tallied at 2:00 PM.
 - All states start with 0 AP, no matter when the game starts.
 
@@ -314,8 +316,8 @@ These are the ways a living state's owner could be exposed. Each one needs to be
 | 1 | Can eliminated players post in `#anonymous-chat`? | **Yes.** It's unattributed anyway. |
 | 2 | Can eliminated players use `/say` in `#diplomacy`? | **No.** The spec says only living states use it. |
 | 3 | Does a player eliminated at 7 PM vote that same night? | **Yes.** |
-| 4 | Can a state transfer AP to itself, or attack itself? | **No.** |
-| 5 | Does the info market show transfers made **earlier today**, before the purchase? | **Yes.** It shows all of the current active day. |
+| 4 | Can a state gift AP to itself, or attack itself? | **No.** |
+| 5 | Does the info market show gifts made **earlier today**, before the purchase? | **Yes.** It shows all of the current active day. |
 | 6 | Is there a minimum player count? | 2 for testing, about 8 recommended for real games |
 | 7 | Where will the bot be hosted (always-on PC, VPS, Docker)? | A local Windows process for development. Decide before the real game. |
 

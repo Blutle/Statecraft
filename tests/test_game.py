@@ -163,7 +163,7 @@ class ActionTests(unittest.TestCase):
         res = self.g.attack("p1", "p4")
         self.assertTrue(res.ok)
         self.assertEqual(self.g.state.phase, "ended")
-        self.assertEqual(self.g.state.winner, "p1")
+        self.assertEqual(self.g.state.winners, ["p1"])
         self.assertIn("GAME_OVER", [e.kind for e in res.events])
 
     def test_upgrade_extends_range(self):
@@ -173,35 +173,35 @@ class ActionTests(unittest.TestCase):
         self.assertEqual(self.g.get("p1").ap, 3)
         self.assertTrue(self.g.attack("p1", "p3").ok)
 
-    def test_transfer(self):
-        self.assertTrue(self.g.transfer("p1", "p2", 3).ok)
+    def test_gift(self):
+        self.assertTrue(self.g.gift("p1", "p2", 3).ok)
         self.assertEqual(self.g.get("p1").ap, 2)
         self.assertEqual(self.g.get("p2").ap, 8)
-        self.assertFalse(self.g.transfer("p1", "p2", 3).ok)  # not enough
-        self.assertFalse(self.g.transfer("p1", "p3", 1).ok)  # out of range
-        self.assertFalse(self.g.transfer("p1", "p1", 1).ok)
+        self.assertFalse(self.g.gift("p1", "p2", 3).ok)  # not enough
+        self.assertFalse(self.g.gift("p1", "p3", 1).ok)  # out of range
+        self.assertFalse(self.g.gift("p1", "p1", 1).ok)
 
-    def test_info_purchase_sees_transfers(self):
-        self.g.transfer("p1", "p2", 1)
+    def test_info_purchase_sees_gifts(self):
+        self.g.gift("p1", "p2", 1)
         res = self.g.buy_info("p4")
         self.assertTrue(res.ok)
-        self.assertIn("Republic of Aldren -> Veyran Empire: 1 AP", res.message)
+        self.assertIn("Republic of Aldren gifted Veyran Empire 1 AP", res.message)
         self.assertFalse(self.g.buy_info("p4").ok)           # once per day
-        # Later transfers are forwarded to the buyer
-        res = self.g.transfer("p2", "p1", 1)
+        # Later gifts are forwarded to the buyer
+        res = self.g.gift("p2", "p1", 1)
         self.assertIn("p4", res.events[0].private)
         # Death ends access immediately
         self.g.get("p4").hp = 1
         place(self.g, "p4", 0, 1)
         self.assertTrue(self.g.attack("p1", "p4").ok)
         self.assertNotIn("p4", self.g.state.info_access)
-        res = self.g.transfer("p2", "p1", 1)
+        res = self.g.gift("p2", "p1", 1)
         self.assertNotIn("p4", res.events[0].private)
         # Access ends with the day
         self.g.buy_info("p3")
         self.g.next_day()
         self.assertEqual(self.g.state.info_access, [])
-        self.assertEqual(self.g.state.transfers_today, [])
+        self.assertEqual(self.g.state.gifts_today, [])
 
 
 class DayAndJuryTests(unittest.TestCase):
@@ -247,13 +247,51 @@ class JuryScoreTests(unittest.TestCase):
         g.get("p4").hp = 1
         place(g, "p4", 0, 1)
         g.attack("p1", "p4")                         # p1 wins on day 3
-        self.assertEqual(g.state.winner, "p1")
+        self.assertEqual(g.state.winners, ["p1"])
         rows = {r["player"].id: r for r in g.jury_scores()}
         self.assertEqual((rows["p2"]["for_winner"], rows["p2"]["nights"]), (1, 2))
         self.assertEqual((rows["p3"]["for_winner"], rows["p3"]["nights"]), (1, 1))
         self.assertEqual(rows["p4"]["nights"], 0)
         self.assertEqual(g.jury_scores()[0]["player"].id, "p3")   # tie on votes, better rate
         self.assertEqual(len(g.state.jury_history), 4)
+
+
+class DeclareWinnersTests(unittest.TestCase):
+    def make(self, n=16, alive=3):
+        g = Game(rng=random.Random(4))
+        for i in range(n):
+            g.register(f"u{i:02d}", f"State {i:02d}")
+        g.start()
+        for p in list(g.state.players.values())[alive:]:
+            p.alive, p.hp, p.eliminated_on_day = False, 0, 1
+        return g
+
+    def test_admin_declares_joint_winners(self):
+        g = self.make(16, 3)
+        res = g.declare_winners(["p1", "p3"])
+        self.assertTrue(res.ok)
+        self.assertEqual(g.state.phase, "ended")
+        self.assertEqual(g.winners(), ["p1", "p3"])
+        self.assertIn("u00", res.events[0].public)            # winners revealed
+        self.assertIn("u02", res.events[0].public)
+        self.assertNotIn("u01", res.events[0].public)         # non-winner survivor stays masked
+        self.assertFalse(g.move("p2", "n").ok)
+
+    def test_declare_validation(self):
+        g = self.make(16, 3)
+        self.assertFalse(g.declare_winners([]).ok)
+        self.assertFalse(g.declare_winners(["p1", "p1"]).ok)
+        self.assertFalse(g.declare_winners(["p1", "p9"]).ok)  # p9 is dead
+        self.assertFalse(g.declare_winners(["nobody"]).ok)
+        self.assertEqual(g.state.phase, "active")
+
+    def test_jury_scores_count_any_declared_winner(self):
+        g = self.make(16, 3)
+        g.state.jury_votes = {"p5": "p1", "p6": "p2", "p7": "p3"}
+        g.next_day()
+        g.declare_winners(["p1", "p3"])
+        rows = {r["player"].id: r["for_winner"] for r in g.jury_scores()}
+        self.assertEqual((rows["p5"], rows["p6"], rows["p7"]), (1, 0, 1))
 
 
 class HistoryTests(unittest.TestCase):
@@ -300,6 +338,17 @@ class StoreTests(unittest.TestCase):
 
     def test_missing_file(self):
         self.assertIsNone(store.load(Path(tempfile.gettempdir()) / "definitely-missing-statecraft.json"))
+
+    def test_old_save_migrates(self):
+        old = make_game(3).state.to_dict()
+        old["transfers_today"] = old.pop("gifts_today")
+        old["winner"] = old.pop("winners") and None
+        old["draw_votes"] = []
+        old["settings"]["draw_threshold_pct"] = 25
+        st = GameState.from_dict(old)
+        self.assertEqual(st.winners, [])
+        self.assertEqual(st.gifts_today, [])
+        self.assertNotIn("draw_threshold_pct", st.settings)
 
     def test_bad_schema(self):
         with self.assertRaises(ValueError):

@@ -42,6 +42,8 @@ def legend(game: Game, viewer: Player | None = None) -> str:
     for p in game.state.players.values():
         if p.alive:
             status = "active"
+            if p.id in game.state.winners:
+                status = "WINNER"
             if viewer and viewer.alive and p.id != viewer.id and game.in_range(viewer, p):
                 status += "  (in your range)"
         else:
