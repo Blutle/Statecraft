@@ -169,8 +169,8 @@ Jury discussion happens in #jury. It's normal chat, not a command.
 | `/admin log [state:<state>] [count:<n>]` | The most recent history-log entries (20 by default, up to 60) for one state or for everyone. Covers actions (rejected ones marked ✗), messages, pact messages, and anonymous posts, **with the real author**. |
 | `/admin juryscore` | After the game: ranks jurors by votes for the winner(s), with ballots, nights, and rate. |
 | `/admin reload` | Reloads `game.json` after you edit it by hand. |
-| `/admin reset` | (Yes/Cancel) Wipes the game for a fresh one. The old history log is kept under a timestamped name. |
-| `/admin cleanup` | (Yes/Cancel) After a game: deletes every console and pact channel (and the extra pact categories) and removes game roles. `game.json` and the history log are kept. |
+| `/admin reset [fresh_channels:<true>]` | (Yes/Cancel) Wipes the game for a fresh one. The old history log is kept under a timestamped name. |
+| `/admin cleanup [fresh_channels:<true>]` | (Yes/Cancel) After a game: deletes every console (and the conversation threads inside them) and every pact channel (and the extra pact categories), and removes game roles. `game.json` and the history log are kept. By default the public channels keep their messages. With `fresh_channels: True` (also available on `/admin reset`), #register, #how-to-play, #game-board, #action-log, #public-chat, #anonymous-chat, and #jury are deleted and recreated empty with the same permissions. #statecraft-admin is kept. |
 
 ## Test mode (`TEST_MODE=1` in `.env` only, admins only)
 
@@ -194,6 +194,7 @@ These let one person run a full game alone on the test server. They are disabled
 | 2:00 PM | Announces jury results, gives each survivor its daily AP, opens actions, and posts "Day N begins" in #action-log. |
 | 8:00 PM | Closes actions and opens jury voting. |
 | 8:15 PM | Ends info access and notifies the buyers. |
+| Every public game event | Posts a short card in **#action-log**: an icon and one or two lines, with each state shown as **Name** `ABC`. Attacks show hearts for the HP left. Eliminations, the day start, and jury results each have their own card, and the game start is a roster card. Role pings sit on the line above the card, because pings don't work inside cards. |
 | After **every** visible action | Updates the #game-board message in place: the map plus the public stats table (HP, range, position, status). Each marker shows its state's range number so reach can be judged at a glance. The message has the same **"Show range for…" dropdown**, and picking a state shows the highlighted board **privately** to whoever picked it, so nobody's choice is visible. Gifts aren't visible, so they don't trigger an update. |
 | On elimination | Reveals the owner, grants `@Statecraft-Jury` (and access to #jury), and posts in #action-log. |
 | At game end | Announces the winner(s) and reveals their owners. |

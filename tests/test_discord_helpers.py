@@ -94,6 +94,44 @@ class AdminLogTests(unittest.TestCase):
             self.assertEqual(len(hist.records(last=2)), 2)
 
 
+class ActionCardTests(unittest.TestCase):
+    def test_every_public_event_makes_a_clean_card(self):
+        from statecraft.discord_format import action_card
+        seen = {}
+        g = Game(rng=random.Random(2), recorder=None)
+        for i, name in enumerate(["Westhaven", "Veyran Empire", "Kesh", "Norland"]):
+            g.register(f"User{i}", name, pid=f"fake{i + 1}")
+        events = list(g.start(force=True).events)
+        for i, p in enumerate(g.state.players.values()):
+            p.x, p.y, p.ap = i, 0, 9
+        g.state.board_size = 6
+        events += g.move("fake1", "s").events
+        events += g.upgrade("fake2").events
+        events += g.buy_info("fake3").events
+        events += g.attack("fake2", "fake3").events
+        g.get("fake3").hp = 1
+        events += g.attack("fake2", "fake3").events                 # elimination
+        g.vote("fake3", "fake1")
+        events += g.next_day().events                                 # jury result + daily AP
+        events += g.admin_edit("fake4", "range", "4").events
+        events += g.admin_edit("fake3", "hp", "2").events              # revive
+        events += g.declare_winners(["fake1", "fake2"]).events
+        for ev in events:
+            if ev.public and ev.kind not in ("PUBLIC_CHAT", "ANONYMOUS"):
+                card = action_card(ev, g, WINDOW)
+                text = (card.description or "") + "".join(f.value for f in card.fields)
+                self.assertTrue(text, ev.kind)
+                self.assertLess(len(text), 1500, ev.kind)
+                self.assertNotIn("None", text, ev.kind)
+                seen[ev.kind] = text
+        for kind in ("GAME_START", "MOVE", "UPGRADE", "INFO_PURCHASE", "ATTACK", "ELIMINATION",
+                     "JURY_RESULT", "DAILY_AP", "ADMIN_EDIT", "REVIVED", "GAME_OVER"):
+            self.assertIn(kind, seen)
+        self.assertIn("`WES` Westhaven", seen["GAME_START"])
+        self.assertIn("joint winners", seen["GAME_OVER"])
+        self.assertIn("User2", seen["ELIMINATION"])                   # owner revealed
+
+
 class DurationTests(unittest.TestCase):
     def test_parse(self):
         self.assertEqual(parse_duration("+2h"), 7200)

@@ -265,12 +265,12 @@ class Game:
         self.state.day = 0
         if now is not None:
             self.state.clock_marker = now.isoformat()
-        roster = ", ".join(f"{p.state_name} [{p.marker}] at {self.pos(p)}" for p in players)
         return self._done(Result(True, "Game started.", [Event(
             "GAME_START",
-            public=f"Statecraft begins on a {size}x{size} board with {n} states: {roster}. "
-                   f"All states start with 0 AP; the first AP arrives at the start of Day 1.",
+            public=f"Statecraft begins: {n} states on a {size}x{size} board. Everyone starts with 0 AP; "
+                   f"the first AP arrives at the start of Day 1.",
             ping="mandatory",
+            data={"states": [p.id for p in players], "size": size},
         )]))
 
     # ---------------------------------------------------------------- actions
@@ -343,7 +343,7 @@ class Game:
         p.ap -= cost
         self._stamp(p, now)
         return self._done(Result(True, f"Moved to {self.pos(p)}. AP left: {p.ap}.", [Event(
-            "MOVE", public=f"{p.state_name} moved from {old} to {self.pos(p)}.", ping="opt_in")]))
+            "MOVE", data={"pid": p.id, "from": old, "to": self.pos(p)}, public=f"{p.state_name} moved from {old} to {self.pos(p)}.", ping="opt_in")]))
 
     @recorded("attack")
     def attack(self, pid: str, tid: str, *, now: datetime | None = None) -> Result:
@@ -363,6 +363,7 @@ class Game:
                 "ATTACK",
                 public=f"{p.state_name} attacked {t.state_name}! {t.state_name} has {t.hp} HP left.",
                 ping="mandatory",
+                data={"attacker": p.id, "target": t.id, "hp": t.hp},
             ))
         else:
             t.hp = 0
@@ -394,6 +395,7 @@ class Game:
             public=f"{w.state_name} is the last state standing and wins Statecraft! "
                    f"It was controlled by {w.owner_name}.",
             ping="mandatory",
+            data={"winners": [w.id], "declared": False},
         )]
 
     def winners(self) -> list[str]:
@@ -411,7 +413,7 @@ class Game:
         p.range_upgrades += 1
         r = self.range_of(p)
         return self._done(Result(True, f"Range is now {r}. AP left: {p.ap}.", [Event(
-            "UPGRADE", public=f"{p.state_name} increased its range to {r}.", ping="opt_in")]))
+            "UPGRADE", data={"pid": p.id, "range": r}, public=f"{p.state_name} increased its range to {r}.", ping="opt_in")]))
 
     @recorded("gift")
     def gift(self, pid: str, tid: str, amount: int, *, now: datetime | None = None) -> Result:
@@ -450,7 +452,8 @@ class Game:
             True,
             f"Information access purchased until {self._info_until(now)}. AP left: {p.ap}.\n"
             + self.gift_report(),
-            [Event("INFO_PURCHASE", public=f"{p.state_name} purchased information access.", ping="opt_in")],
+            [Event("INFO_PURCHASE", public=f"{p.state_name} purchased information access.", ping="opt_in",
+                   data={"pid": p.id})],
         ))
 
     def _info_until(self, now: datetime | None) -> str:
@@ -506,13 +509,15 @@ class Game:
                 t = self.get(tid)
                 if t and t.alive:
                     counts[tid] = counts.get(tid, 0) + 1
-            parts = []
+            parts, awards = [], []
             for tid, n in sorted(counts.items(), key=lambda kv: -kv[1]):
                 t = self.get(tid)
                 bonus = n // self.s["votes_per_ap"]
                 t.ap += bonus
                 parts.append(f"{t.state_name}: {n} vote{'s' if n != 1 else ''} (+{bonus} AP)")
-            events.append(Event("JURY_RESULT", public="Jury results: " + ("; ".join(parts) or "no valid votes") + "."))
+                awards.append({"pid": tid, "votes": n, "bonus": bonus})
+            events.append(Event("JURY_RESULT", public="Jury results: " + ("; ".join(parts) or "no valid votes") + ".",
+                                data={"awards": awards}))
             self._archive_votes(tallied=True)
 
         self.state.info_access = []
@@ -523,6 +528,7 @@ class Game:
         events.append(Event(
             "DAILY_AP",
             public=f"Day {self.state.day} begins. Each surviving state receives {self.s['daily_ap']} AP.",
+            data={"day": self.state.day, "alive": len(self.alive_players()), "amount": self.s["daily_ap"]},
         ))
         return self._done(Result(True, f"Advanced to Day {self.state.day}.", events))
 
@@ -610,7 +616,8 @@ class Game:
         names = "; ".join(f"{p.state_name} (controlled by {p.owner_name})" for p in chosen)
         verb = "is declared the winner" if len(chosen) == 1 else "are declared joint winners"
         return self._done(Result(True, "Game ended.", [Event(
-            "GAME_OVER", public=f"The game is over. {names} {verb} of Statecraft!", ping="mandatory")]))
+            "GAME_OVER", public=f"The game is over. {names} {verb} of Statecraft!", ping="mandatory",
+            data={"winners": list(pids), "declared": True})]))
 
     # Referee edits: every stored attribute of a state.
     ADMIN_FIELDS = {

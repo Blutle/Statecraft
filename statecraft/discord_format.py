@@ -154,6 +154,73 @@ def _panel_card(game: Game, pid: str, now: datetime) -> discord.Embed:
     return emb
 
 
+CARD_COLOURS = {
+    "ATTACK": 0xED4245, "ELIMINATION": 0x2B2D31, "MOVE": 0x4F545C, "UPGRADE": 0x5865F2,
+    "INFO_PURCHASE": 0x9B59B6, "DAILY_AP": 0xFAA61A, "JURY_RESULT": 0x9B59B6, "GAME_START": 0x1ABC9C,
+    "GAME_OVER": 0xF1C40F, "ADMIN_EDIT": 0x95A5A6, "REVIVED": 0x57F287,
+}
+
+
+def action_card(ev, game: Game, now: datetime | None = None) -> discord.Embed:
+    """A short, readable #action-log card for a public game event."""
+    d, s = ev.data, game.s
+
+    def tag(pid: str | None) -> str:
+        p = game.get(pid) if pid else None
+        return f"**{p.state_name}** `{p.marker}`" if p else "**?**"
+
+    k = ev.kind
+    emb = discord.Embed(colour=CARD_COLOURS.get(k, 0x4F545C))
+    if k == "ATTACK":
+        hearts = "❤️" * d["hp"] + "🖤" * (s["starting_hp"] - d["hp"])
+        emb.description = f"⚔️ {tag(d['attacker'])} attacked {tag(d['target'])}\n{hearts} {d['hp']} HP left"
+    elif k == "ELIMINATION":
+        v = game.get(d["victim"])
+        by = f" by {tag(d['attacker'])}" if d.get("attacker") else " by the referee"
+        emb.description = (f"💀 {tag(d['victim'])} was **destroyed**{by}\n"
+                           f"It was controlled by **{v.owner_name}**, who joins the Jury.")
+    elif k == "MOVE":
+        emb.description = f"🧭 {tag(d['pid'])} moved {d['from']} → **{d['to']}**"
+    elif k == "UPGRADE":
+        emb.description = f"📡 {tag(d['pid'])} extended its range to **{d['range']}**"
+    elif k == "INFO_PURCHASE":
+        emb.description = f"🔍 {tag(d['pid'])} bought information access"
+    elif k == "DAILY_AP":
+        emb.description = (f"🌅 **Day {d['day']} begins** · {d['alive']} states remain · "
+                           f"each gains {d['amount']} AP · actions open until {_clock(s['window_close'])}")
+    elif k == "JURY_RESULT":
+        lines = [f"{tag(a['pid'])}: {a['votes']} vote{'s' if a['votes'] != 1 else ''}"
+                 + (f" → **+{a['bonus']} AP**" if a["bonus"] else "") for a in d.get("awards", [])]
+        emb.description = "🗳️ **Jury results**\n" + ("\n".join(lines) or "No valid votes.")
+    elif k == "GAME_START":
+        emb.title = "⚔️ Statecraft begins"
+        first = (schedule.fmt(schedule.next_at(now, s, "window_open"), s) if now else "the next 2:00 PM")
+        emb.description = (f"**{len(d['states'])} states** on a **{d['size']}×{d['size']}** board. "
+                           f"Everyone starts with 0 AP; the first AP arrives **{first}**.\n"
+                           f"The map is in the board channel.")
+        states = sorted((game.get(pid) for pid in d["states"]), key=lambda p: p.marker)
+        half = -(-len(states) // 2)
+        for col in (states[:half], states[half:]):
+            if col:
+                emb.add_field(name="​", value="\n".join(f"`{p.marker}` {p.state_name}" for p in col),
+                              inline=True)
+    elif k == "GAME_OVER":
+        win = [game.get(w) for w in d.get("winners", [])]
+        if len(win) == 1 and not d.get("declared"):
+            emb.description = (f"🏆 {tag(win[0].id)} is the last state standing and **wins Statecraft!**\n"
+                               f"It was controlled by **{win[0].owner_name}**.")
+        else:
+            names = "\n".join(f"{tag(w.id)}, controlled by **{w.owner_name}**" for w in win)
+            emb.description = f"🏆 **The game is over.** Declared {'winner' if len(win) == 1 else 'joint winners'}:\n{names}"
+    elif k == "ADMIN_EDIT":
+        emb.description = f"🛠️ Referee adjustment: {ev.public.split(': ', 1)[-1]}"
+    elif k == "REVIVED":
+        emb.description = f"✨ {tag(d['pid'])} has been restored by the referee"
+    else:
+        emb.description = ev.public
+    return emb
+
+
 def history_line(rec: dict, game: Game) -> str:
     """One history record as a short line for the referee (/admin log)."""
     s = game.s

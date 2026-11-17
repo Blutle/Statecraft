@@ -22,7 +22,7 @@ from discord import app_commands
 from discord.ext import tasks
 
 from . import config, discord_setup, geometry, schedule
-from .discord_format import (HELP, NO_PINGS, board_message, history_line, own_status, parse_duration, public_status,
+from .discord_format import (HELP, NO_PINGS, action_card, board_message, history_line, own_status, parse_duration, public_status,
                              run_text)
 from .discord_service import GameService
 from .discord_ui import (UI, BoardRangeSelect, PactInviteButton, PanelButton, PanelSelect, ReplyButton, board_view,
@@ -92,11 +92,12 @@ class Router:
                 role_key = "players" if ev.kind in PUBLIC_KINDS_PLAYERS_PING else \
                     "updates" if ev.kind in PUBLIC_KINDS_UPDATES_PING else None
                 rid = self.svc.role_id(role_key) if role_key else None
-                if rid:
-                    await ch.send(f"<@&{rid}> {ev.public}", allowed_mentions=discord.AllowedMentions(
+                card = action_card(ev, self.svc.game, self.svc.now())
+                if rid:   # pings only work in message text, so the mention sits above the card
+                    await ch.send(f"<@&{rid}>", embed=card, allowed_mentions=discord.AllowedMentions(
                         everyone=False, users=False, roles=[discord.Object(rid)]))
                 else:
-                    await ch.send(ev.public, allowed_mentions=NO_PINGS)
+                    await ch.send(embed=card, allowed_mentions=NO_PINGS)
 
         for pid, text in ev.private.items():
             view = None
@@ -1001,8 +1002,35 @@ def register_commands(bot: StatecraftBot) -> None:
             await bot.router.refresh_board()
             ui.schedule_refresh()
 
+    async def recreate_public_channels(guild: discord.Guild) -> None:
+        """Delete the public game channels and recreate them empty (same names
+        and permissions). Their Discord history goes; the history log stays.
+        #statecraft-admin (the referee's channel) is left alone."""
+        kept = {}
+        for key, cid in list(svc.server.get("channels", {}).items()):
+            if key == "admin_log":
+                kept[key] = cid
+                continue
+            ch = guild.get_channel(cid)
+            if ch:
+                await ch.delete(reason="Statecraft: fresh channels")
+        svc.server["channels"] = kept
+        svc.server.pop("board_message_id", None)
+        svc.server.pop("public_chat_webhook_id", None)
+        svc.save_server()
+        keep = {k: v for k, v in svc.server.items() if k not in ("roles", "channels", "category_id",
+                                                               "console_category_id", "public_chat_webhook_id")}
+        await discord_setup.ensure_server(guild, svc.cfg.server_file)
+        svc.server = {**discord_setup.load_server(svc.cfg.server_file), **keep}
+        svc.save_server()
+        bot._webhook = None
+
+    FRESH_NOTE = ("Also wipe the public game channels (board, action log, chats, jury, register) by "
+                  "recreating them empty. #statecraft-admin is kept.")
+
     @admin.command(description="Wipe the game (keeps the old history log)")
-    async def reset(i: discord.Interaction):
+    @app_commands.describe(fresh_channels=FRESH_NOTE)
+    async def reset(i: discord.Interaction, fresh_channels: bool = False):
         if not await admin_only(i):
             return
 
@@ -1014,26 +1042,43 @@ def register_commands(bot: StatecraftBot) -> None:
             await delete_game_channels(ci.guild, people)
             svc.server.pop("board_message_id", None)
             svc.save_server()
-            await ci.edit_original_response(content="Game reset." + (f" Old history kept as {archived}."
-                                                                     if archived else ""))
+            if fresh_channels:
+                await recreate_public_channels(ci.guild)
+            done = ("Game reset." + (" Public channels recreated empty." if fresh_channels else "")
+                    + (f" Old history kept as {archived}." if archived else ""))
+            try:
+                await ci.edit_original_response(content=done)
+            except discord.HTTPException:          # the channel it was run in may be gone
+                await bot.router.admin_log(done)
 
+        extra = " **The public game channels will also be deleted and recreated empty.**" if fresh_channels else ""
         await ui.ask(i, "**Wipe the current game?** This deletes every state, console, and pact channel, and "
-                        "removes the game roles. The history log is kept under a timestamped name.", go,
+                        f"removes the game roles. The history log is kept under a timestamped name.{extra}", go,
                      ephemeral=True)
 
     @admin.command(description="After a game: delete consoles and pact channels, remove roles (keeps the record)")
-    async def cleanup(i: discord.Interaction):
+    @app_commands.describe(fresh_channels=FRESH_NOTE)
+    async def cleanup(i: discord.Interaction, fresh_channels: bool = False):
         if not await admin_only(i):
             return
 
         async def go(ci: discord.Interaction):
             await ci.response.edit_message(content="Cleaning up...", view=None)
             await delete_game_channels(ci.guild, set(svc.server["consoles"]) | set(svc.game.state.players))
-            await ci.edit_original_response(content="Cleaned up. game.json and the history log are untouched.")
+            if fresh_channels:
+                await recreate_public_channels(ci.guild)
+            done = ("Cleaned up." + (" Public channels recreated empty." if fresh_channels else "")
+                    + " game.json and the history log are untouched.")
+            try:
+                await ci.edit_original_response(content=done)
+            except discord.HTTPException:          # the channel it was run in may be gone
+                await bot.router.admin_log(done)
 
         warn = "" if svc.game.state.phase == "ended" else " **The game is still in progress!**"
+        extra = (" **The public game channels will also be deleted and recreated empty.**"
+                 if fresh_channels else " Public channels keep their messages.")
         await ui.ask(i, "Delete every console and pact channel and remove the game roles? The game record "
-                        f"(game.json and the history log) is kept.{warn}", go, ephemeral=True)
+                        f"(game.json and the history log) is kept.{extra}{warn}", go, ephemeral=True)
 
     tree.add_command(admin)
 
