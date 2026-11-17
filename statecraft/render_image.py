@@ -33,6 +33,7 @@ DEAD = (78, 80, 88)
 DEAD_TEXT = (150, 152, 158)
 THREAT = (237, 66, 69)
 YOU = (255, 255, 255)
+GOLD = (250, 196, 55)
 
 _FONT_DIRS = [Path("C:/Windows/Fonts"), Path("/usr/share/fonts/truetype/dejavu"), Path("/usr/share/fonts/TTF"),
               Path("/Library/Fonts"), Path("/System/Library/Fonts/Supplemental")]
@@ -108,7 +109,11 @@ def render(game: Game, focus: str | None = None, viewer: str | None = None) -> b
     top = header + label
 
     # Legend layout: one or two columns
-    alive_first = sorted(players, key=lambda p: (not p.alive, p.state_name.lower()))
+    def sort_name(p):
+        name = p.state_name.lower()
+        return name[4:] if name.startswith("the ") else name
+    alive_first = sorted(players, key=lambda p: (not p.alive, sort_name(p)))
+    winners = set(game.winners()) if st.phase == "ended" else set()
     cols = 2 if len(players) > 8 else 1
     row_h = 46
     rows = -(-len(alive_first) // cols)
@@ -123,7 +128,8 @@ def render(game: Game, focus: str | None = None, viewer: str | None = None) -> b
     title = f"Statecraft · Day {st.day}"
     sub = f"{len(alive)} of {len(players)} states remain"
     if st.phase == "ended":
-        sub = "Game over · winner: " + ", ".join(game.get(w).state_name for w in game.winners())
+        names = [game.get(w).state_name for w in game.winners()]
+        sub = ("Game over · winners: " if len(names) > 1 else "Game over · winner: ") + ", ".join(names)
     d.text((pad, 14), title, font=_font(28, True), fill=TEXT)
     d.text((pad, 46), sub, font=_font(17), fill=MUTED)
     if focus_p:
@@ -189,6 +195,8 @@ def render(game: Game, focus: str | None = None, viewer: str | None = None) -> b
             d.rounded_rectangle((x0 - 2, y0 - 2, x1 + 2, y1 + 2), radius + 2, outline=THREAT, width=max(3, cell // 16))
         if viewer_p and p.id == viewer_p.id:
             d.rounded_rectangle((x0 - 2, y0 - 2, x1 + 2, y1 + 2), radius + 2, outline=YOU, width=max(3, cell // 16))
+        if p.id in winners:
+            d.rounded_rectangle((x0 - 3, y0 - 3, x1 + 3, y1 + 3), radius + 3, outline=GOLD, width=max(4, cell // 12))
         _centered(d, ((x0 + x1) / 2, y0 + (y1 - y0) * 0.44), p.marker, mf, ink)
         _pips(d, (x0 + x1) / 2, y0 + (y1 - y0) * 0.70, p.hp, max_hp, max(5, cell // 11), ink,
               (ink[0], ink[1], ink[2]))
@@ -233,6 +241,9 @@ def render(game: Game, focus: str | None = None, viewer: str | None = None) -> b
             if p.id in threats:
                 detail += " · can reach you"
                 colour = THREAT
+            if p.id in winners:
+                detail += " · WINNER"
+                colour = GOLD
         else:
             detail = f"destroyed day {p.eliminated_on_day} · was {p.owner_name}"
             colour = DEAD_TEXT
