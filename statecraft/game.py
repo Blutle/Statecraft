@@ -469,7 +469,8 @@ class Game:
             if buyer not in (p.id, t.id):
                 private[buyer] = f"[Info] {line}"
         return self._done(Result(True, f"Gifted {amount} AP to {t.state_name}. AP left: {p.ap}.",
-                                 [Event("GIFT", private=private)]))
+                                 [Event("GIFT", private=private,
+                                        data={"from": p.id, "to": t.id, "amount": amount})]))
 
     @recorded("buy_info")
     def buy_info(self, pid: str, *, now: datetime | None = None) -> Result:

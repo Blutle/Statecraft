@@ -40,7 +40,7 @@ Every console has a **control panel** that always sits at the **bottom** of the 
 - **Living states:** AP, HP, Influence, and position; when your cooldown is ready; whether actions are open; whether you're spying; which states you can reach; and which states can reach you.
 - **Jurors:** your current vote and whether voting is open.
 - **Updates:** the card refreshes after every change to the game, and on demand with **Refresh**.
-- **Recent activity:** the last 6 private notices (gifts received, forwarded Gifts from Spying, Spy access ending, being destroyed, pact removals or declines) are listed on the card instead of being posted as separate messages.
+- **Recent activity:** the last 6 private notices (gifts received, a link to your Spy log channel when you Spy, Spy access ending, being destroyed, pact removals or declines) are listed on the card instead of being posted as separate messages.
 
 **Keeping consoles clean:**
 - Every reply to something you do (command results, rejections, confirmations, menus) is **private** and disappears when dismissed.
@@ -90,7 +90,7 @@ Each action is allowed only **2:00–8:00 PM Central** and starts your **15-minu
 | `/attack state:<state>` | 1 AP | Deals 1 damage to a state within your Influence. At 0 HP the state is destroyed, its owner is revealed, and they join the Jury. | #action-log, pings `@Statecraft-Players` |
 | `/upgrade` | 2 AP | Influence +1. Influence is the number of horizontal plus vertical steps, with a diagonal step counting as 2. | #action-log, pings `@Statecraft-Updates` |
 | `/gift state:<state>` | 1 AP | Gives exactly **1 AP** to a State within your Influence (the `gift_amount` setting). To send more, Gift again after your cooldown. The recipient sees it in Recent activity. | **No.** Only the recipient, and anyone Spying, finds out. |
-| `/spy` | 1 AP | **Spy**: shows the top-secret log of every Gift made today in your console, and forwards new Gifts until 8:15 PM. | Spying is posted in #action-log (pings Updates); the Gift details stay private. |
+| `/spy` | 1 AP | **Spy**: opens your own private **spy channel** (`#spy-xxxx` in "Statecraft Spies", visible only to you and the referee). It starts with every Gift made today, and each new Gift is posted there as it happens, with a ping. The channel is deleted when access ends: 8:15 PM, your destruction, or the next day. Spies get separate channels, never a shared one, because a shared channel's member list would show the spies' real names. | Spying is posted in #action-log (pings Updates); the Gift details stay private. |
 
 ## Info (console only, free, any time, no cooldown)
 
@@ -100,7 +100,7 @@ Each action is allowed only **2:00–8:00 PM Central** and starts your **15-minu
 | `/status state:<state>` | **Another state's** public stats: HP, position, Influence, alive or destroyed (with the owner if destroyed), plus whether it's within your Influence and whether you're within its. **AP and cooldown are hidden.** AP is the one hidden stat. Cooldown stays hidden because gifts are private but still start a cooldown, so showing it would leak when someone gifted. |
 | `/board` | Posts a board image **in your console**. By default it highlights your own Influence and outlines in red every state that can reach you. A **"Show Influence for…" dropdown** under the image redraws the board with any state's Influence highlighted (Influence is public). |
 | `/board state:<state>` | The same board, starting with that state's Influence highlighted. |
-| `/spylog` | Re-shows today's Spy log, if you're spying today. |
+| `/spylog` | Links your spy channel and re-shows today's Spy log as a private reply, if you're spying today. |
 | `/help` | The command list and a short rules summary. |
 | `/panel` | Re-posts your control panel (if it's missing or buried). |
 

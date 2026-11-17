@@ -135,7 +135,9 @@ def how_to_play(s: dict) -> list[tuple[str, str]]:
          "two away.\n"
          "• **The status card**: your AP, HP, Influence, position, when your cooldown is ready, whether actions "
          "are open, which States are within your Influence, and which can reach you.\n"
-         "• **Recent activity**: Gifts you received, Spy alerts, and other notices.\n"
+         "• **Recent activity**: Gifts you received, your Spy log link, and other notices.\n"
+         "• **Spying** opens your own private **spy channel** with every Gift made today. New Gifts appear "
+         "there as they happen, and the channel closes when your access ends.\n"
          "• **🔄 Refresh** updates it. If it's ever missing, type `/panel`."),
 
         ("🎯 Taking actions",
