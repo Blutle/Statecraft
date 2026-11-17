@@ -837,22 +837,36 @@ def register_commands(bot: StatecraftBot) -> None:
     tree.add_command(pact)
 
     async def delete_game_channels(guild: discord.Guild, people: set[str]) -> None:
-        """Delete consoles and pact channels, and remove game roles. Keeps game.json."""
-        for pid, cid in list(svc.server.get("consoles", {}).items()):
-            ch = bot.get_channel(cid)
-            if ch:
+        """Delete consoles and pact channels, and remove game roles. Keeps game.json.
+
+        Works from the records *and* by location: every channel in the
+        console category and in any "Statecraft Pacts" category goes, even
+        ones the records lost track of. Discord rate-limits bulk deletes;
+        discord.py waits and retries, so this can take a minute."""
+        async def drop(ch) -> None:
+            try:
                 await ch.delete(reason="Statecraft cleanup")
-            svc.set_console(pid, None)
-        for copies in list(svc.pact_channels().values()):
-            for rec in copies.values():
-                ch = bot.get_channel(rec["channel"])
-                if ch:
-                    await ch.delete(reason="Statecraft cleanup")
-        svc.server["pact_channels"] = {}
-        for cid in svc.server.get("pact_categories", []):
-            cat = bot.get_channel(cid)
+            except discord.NotFound:
+                pass
+
+        doomed = {cid for cid in svc.server.get("consoles", {}).values()}
+        doomed |= {rec["channel"] for copies in svc.pact_channels().values() for rec in copies.values()}
+        console_cat = guild.get_channel(svc.server.get("console_category_id") or 0)
+        pact_cats = {guild.get_channel(cid) for cid in svc.server.get("pact_categories", [])}
+        pact_cats |= {c for c in guild.categories if c.name.startswith("Statecraft Pacts")}
+        pact_cats.discard(None)
+        for cat in [console_cat, *pact_cats]:
             if cat:
-                await cat.delete(reason="Statecraft cleanup")
+                doomed |= {ch.id for ch in cat.channels}
+        for cid in doomed:
+            ch = guild.get_channel(cid)
+            if ch:
+                await drop(ch)
+        for cat in pact_cats:
+            await drop(cat)
+        for pid in list(svc.server.get("consoles", {})):
+            svc.set_console(pid, None)
+        svc.server["pact_channels"] = {}
         svc.server["pact_categories"] = []
         for key in ("panels", "dm_threads", "console_hooks", "recent"):
             svc.server[key] = {}
