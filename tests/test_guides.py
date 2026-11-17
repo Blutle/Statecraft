@@ -10,20 +10,20 @@ class GuideTests(unittest.TestCase):
         for name, sections in (("rules", guides.rules(DEFAULT_SETTINGS)),
                                ("how_to_play", guides.how_to_play(DEFAULT_SETTINGS))):
             self.assertLessEqual(len(sections), 25, name)
-            for title, body in sections:
+            for title, body, *_ in sections:
                 self.assertLessEqual(len(title), 256, title)
                 self.assertLessEqual(len(body), 4096, title)
                 self.assertEqual(body.count("```") % 2, 0, title)
 
     def test_numbers_follow_settings(self):
         s = dict(DEFAULT_SETTINGS, cooldown_minutes=20, window_open="15:00", upgrade_cost=3)
-        text = "\n".join(b for _, b in guides.rules(s))
+        text = "\n".join(sec[1] for sec in guides.rules(s))
         self.assertIn("20 minutes", text)
         self.assertIn("3:00 PM", text)
         self.assertIn("**Upgrade Influence**: 3 AP", text)
 
     def test_referee_approved_wording_is_exact(self):
-        text = "\n".join(b for _, b in guides.rules(DEFAULT_SETTINGS))
+        text = "\n".join("\n".join(x for x in sec[1:] if x) for sec in guides.rules(DEFAULT_SETTINGS))
         for phrase in (
             "Any action that targets another State requires that State to be in Range of your State's Influence. "
             "Example Influence ranges are pictured below.",
@@ -38,21 +38,20 @@ class GuideTests(unittest.TestCase):
         for gone in ("Nobody inherits", "Always hits", "HP never regenerates", "three-quarters", "trade"):
             self.assertNotIn(gone, text)
 
-    def test_range_diagram_matches_the_rule(self):
-        body = dict(guides.rules(DEFAULT_SETTINGS))["📏 Influence"]
-        art = body.split("```")[1].splitlines()[3:]            # skip the opening, the titles, and the blank line
-        for rng, col_start, centre_col in ((2, 0, 4), (3, 18, 24)):
-            marks = set()
-            for row, line in enumerate(art):
-                seg = line[col_start:col_start + 13]
-                for k, ch in enumerate(seg):
-                    if ch in "X@":
-                        marks.add(((col_start + k - centre_col) // 2, row))
-            centre_row = next(r for r, line in enumerate(art) if "@" in line[col_start:col_start + 13])
-            got = {(dx, dy - centre_row) for dx, dy in marks} - {(0, 0)}
-            want = {(dx, dy) for dx in range(-5, 6) for dy in range(-5, 6) if geometry.in_range(0, 0, dx, dy, rng)}
-            self.assertEqual(got, want, f"range {rng} diagram")
+    def test_influence_card_has_the_picture(self):
+        card = next(sec for sec in guides.rules(DEFAULT_SETTINGS) if sec[0] == "📏 Influence")
+        self.assertEqual(card[2], "influence")
+        self.assertEqual(card[3], "Every State starts with 2 Influence Range")
+        from statecraft import render_image
+        self.assertTrue(render_image.influence_png().startswith(b"\x89PNG"))
 
+    def test_upgrade_is_the_last_action(self):
+        body = {sec[0]: sec[1] for sec in guides.rules(DEFAULT_SETTINGS)}["🎯 Actions"]
+        self.assertTrue(body.rstrip().splitlines()[-1].startswith("**Upgrade Influence**"))
+
+    def test_pact_founding_wording(self):
+        body = {sec[0]: sec[1] for sec in guides.how_to_play(DEFAULT_SETTINGS)}["🤝 Pacts (group chats)"]
+        self.assertIn("(you can found up to 3)", body)
 
 if __name__ == "__main__":
     unittest.main()

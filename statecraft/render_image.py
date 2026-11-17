@@ -104,6 +104,44 @@ def _pips(draw, cx, y, hp, max_hp, size, fill_on, fill_off):
         x += size + gap
 
 
+def influence_png(examples: tuple[int, ...] = (2, 3)) -> bytes:
+    """Rules illustration: a State's reach at a few Influence values, drawn
+    like the real board (shaded squares are within Influence)."""
+    cell, pad, gap = 44, 24, 48
+    tint = colours.PALETTE["Teal"]
+    sizes = [2 * r + 3 for r in examples]                 # one empty square of margin all round
+    width = pad * 2 + sum(n * cell for n in sizes) + gap * (len(sizes) - 1)
+    height = pad * 2 + 44 + max(sizes) * cell + 30
+    img = Image.new("RGB", (width, height), BG)
+    d = ImageDraw.Draw(img)
+    x_off = pad
+    for r, n in zip(examples, sizes):
+        top = pad + 44 + (max(sizes) - n) * cell // 2
+        _centered(d, (x_off + n * cell / 2, pad + 16), f"Influence {r}", _font(22, True), TEXT)
+        c = n // 2
+        overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        od = ImageDraw.Draw(overlay)
+        for x in range(n):
+            for y in range(n):
+                x0, y0 = x_off + x * cell, top + y * cell
+                d.rectangle((x0, y0, x0 + cell - 1, y0 + cell - 1), fill=CELL_A if (x + y) % 2 == 0 else CELL_B)
+                if geometry.in_range(c, c, x, y, r):
+                    od.rectangle((x0, y0, x0 + cell - 1, y0 + cell - 1), fill=(*tint, 120))
+        img.paste(Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB"))
+        d = ImageDraw.Draw(img)
+        for k in range(n + 1):
+            d.line((x_off + k * cell, top, x_off + k * cell, top + n * cell), fill=GRID, width=2)
+            d.line((x_off, top + k * cell, x_off + n * cell, top + k * cell), fill=GRID, width=2)
+        x0, y0 = x_off + c * cell + 4, top + c * cell + 4
+        d.rounded_rectangle((x0, y0, x0 + cell - 8, y0 + cell - 8), 7, fill=tint)
+        _centered(d, (x0 + (cell - 8) / 2, y0 + (cell - 8) / 2), "YOU", _font(12, True), _ink(tint))
+        x_off += n * cell + gap
+    d.text((pad, height - pad - 14), "Shaded squares are within Influence.", font=_font(15), fill=MUTED)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", optimize=True)
+    return buf.getvalue()
+
+
 def palette_png(taken: set[str], mine: str | None = None) -> bytes:
     """The color palette as a picture: free colors bright, taken ones dimmed
     (without saying who holds them), the viewer's own color outlined."""

@@ -13,6 +13,7 @@ Commands are documented in COMMANDS.md; keep the two in sync.
 
 from __future__ import annotations
 
+import io
 import logging
 import secrets
 from datetime import timedelta
@@ -21,7 +22,7 @@ import discord
 from discord import app_commands
 from discord.ext import tasks
 
-from . import colours, config, discord_setup, geometry, guides, schedule
+from . import colours, config, discord_setup, geometry, guides, render_image, schedule
 from .discord_format import (HELP, NO_PINGS, action_card, board_message, history_line, own_status, parse_duration, public_status,
                              run_text)
 from .discord_service import GameService
@@ -35,6 +36,7 @@ PUBLIC_KINDS_PLAYERS_PING = {"ATTACK", "ELIMINATION", "GAME_OVER", "GAME_START",
 PUBLIC_KINDS_UPDATES_PING = {"MOVE", "UPGRADE", "INFO_PURCHASE"}
 BOARD_CHANGING = {"GAME_START", "MOVE", "ATTACK", "ELIMINATION", "UPGRADE", "DAILY_AP",
                   "JURY_RESULT", "GAME_OVER", "ADMIN_EDIT", "REVIVED"}
+PICTURES = {"influence": lambda: render_image.influence_png()}   # illustrations used by the guides
 KEEP_ON_FRESH = {"admin_log", "rules", "how_to_play"}   # fresh_channels never wipes these
 CHAT_KINDS = {"PUBLIC_CHAT", "ANONYMOUS", "PRIVATE_MESSAGE", "PACT_MESSAGE"}   # no panel refresh needed
 DIRECTIONS = [app_commands.Choice(name=n, value=v) for n, v in [
@@ -363,13 +365,26 @@ class Router:
             if not ch:
                 report.append(f"no #{key.replace('_', '-')} channel (run /admin setup)")
                 continue
-            cards = [discord.Embed(title=title, description=body, colour=0x1ABC9C if key == "rules" else 0x5865F2)
-                     for title, body in sections]
+            cards, pictures = [], []
+            for title, body, *pic in sections:
+                card = discord.Embed(title=title, description=body, colour=0x1ABC9C if key == "rules" else 0x5865F2)
+                if pic:
+                    card.set_image(url=f"attachment://{pic[0]}.png")
+                    if len(pic) > 1:
+                        card.set_footer(text=pic[1])           # sits underneath the picture
+                    pictures.append((f"{pic[0]}.png", PICTURES[pic[0]]()))
+                else:
+                    pictures.append(None)
+                cards.append(card)
+
+            def files(n):
+                return [discord.File(io.BytesIO(pictures[n][1]), filename=pictures[n][0])] if pictures[n] else []
+
             stored = self.svc.server.setdefault("guides", {}).get(key, [])
             if len(stored) == len(cards):
                 try:
-                    for mid, card in zip(stored, cards):
-                        await ch.get_partial_message(mid).edit(embed=card)
+                    for n, (mid, card) in enumerate(zip(stored, cards)):
+                        await ch.get_partial_message(mid).edit(embed=card, attachments=files(n))
                     report.append(f"updated #{ch.name} ({len(cards)} cards)")
                     continue
                 except discord.NotFound:
@@ -379,7 +394,8 @@ class Router:
                     await ch.get_partial_message(mid).delete()
                 except discord.HTTPException:
                     pass
-            ids = [(await ch.send(embed=card, allowed_mentions=NO_PINGS)).id for card in cards]
+            ids = [(await ch.send(embed=card, files=files(n), allowed_mentions=NO_PINGS)).id
+                   for n, card in enumerate(cards)]
             self.svc.server["guides"][key] = ids
             self.svc.save_server()
             report.append(f"posted #{ch.name} ({len(cards)} cards)")

@@ -1,8 +1,10 @@
 """Content for #rules (the game) and #how-to-play (using the bot).
 
 Numbers come from the game settings, so the guides stay correct if a
-setting changes. Each guide is a list of (title, body) sections; the bot
-posts each section as one card. Game terms: State (capitalized), Influence
+setting changes. Each guide is a list of (title, body) sections, or
+(title, body, picture, caption): picture names an illustration the bot
+draws (PICTURES in discord_bot), and caption is shown underneath it (as the
+card's footer, the only text Discord places below a picture). Game terms: State (capitalized), Influence
 (a State's reach), Gift, Spy.
 """
 
@@ -48,25 +50,15 @@ def rules(s: dict) -> list[tuple[str, str]]:
          f"**Move**: {s['move_cost']} AP. One square in any of the 8 directions. You can't move off the board or "
          "onto another State, living or destroyed.\n"
          f"**Attack**: {s['attack_cost']} AP. Deal 1 damage to a State within your Influence.\n"
-         f"**Upgrade Influence**: {s['upgrade_cost']} AP. Your Influence grows by 1, permanently.\n"
          f"**Gift**: {s['gift_amount']} AP. Give {s['gift_amount']} AP to a State within your Influence.\n"
          f"**Spy**: {s['info_cost']} AP. Gain access to a top-secret log that shows all gift actions performed "
-         "for the current day."),
+         "for the current day.\n"
+         f"**Upgrade Influence**: {s['upgrade_cost']} AP. Your Influence grows by 1, permanently."),
 
         ("📏 Influence",
          "Any action that targets another State requires that State to be in Range of your State's Influence. "
-         "Example Influence ranges are pictured below.\n"
-         "```\n"
-         "Influence 2       Influence 3\n"
-         "\n"
-         "    X                   X\n"
-         "  X X X               X X X\n"
-         "X X @ X X           X X X X X\n"
-         "  X X X           X X X @ X X X\n"
-         "    X               X X X X X\n"
-         "                      X X X\n"
-         "                        X\n"
-         "```"
+         "Example Influence ranges are pictured below.",
+         "influence",
          f"Every State starts with {s['base_range']} Influence Range"),
 
         ("💀 Destruction",
@@ -155,7 +147,7 @@ def how_to_play(s: dict) -> list[tuple[str, str]]:
 
         ("🤝 Pacts (group chats)",
          f"Pacts are private group chats for alliances (or plots).\n"
-         f"• Tap **🤝 Pacts** to **found** one (up to {s['pact_found_limit']} each). Only the **founder** can invite "
+         f"• Tap **🤝 Pacts** to **found** one (you can found up to {s['pact_found_limit']}). Only the **founder** can invite "
          "or remove members.\n"
          "• Invitations arrive in your console with **Accept** / **Decline** buttons.\n"
          "• Each member gets their own copy of the pact channel. Just type there: your messages appear to the "
