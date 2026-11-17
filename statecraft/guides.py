@@ -103,13 +103,10 @@ def register(s: dict, rules_ch: str = "#rules", how_ch: str = "#how-to-play") ->
     return [
         ("🏛️ Welcome to Statecraft",
          "**Type `/join` in this channel to register a State.**\n\n"
-         "• You'll get a **private console**, a channel only you (and the referee) can see. You name your State "
-         "and pick its color there, never here, so nobody can tell which State is yours.\n"
-         f"• The game needs at least **{s['min_players']} States**. The referee starts it once registration "
-         "closes.\n"
+         "• You'll get a **private console**, a channel only you (and the referee) can see.\n"
          "• Everything you send through the bot is recorded for the post-game summary.\n\n"
          f"📜 Game rules: {rules_ch}\n"
-         f"❔ How to use the bot, consoles, messages, and pacts: {how_ch}"),
+         f"❔ How to use the server: {how_ch}"),
     ]
 
 

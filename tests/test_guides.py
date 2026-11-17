@@ -59,7 +59,7 @@ class GuideTests(unittest.TestCase):
         self.assertIn("`/join`", body)
         self.assertIn("<#1>", body)
         self.assertIn("<#2>", body)
-        self.assertIn("12 States", body)
+        self.assertIn("❔ How to use the server: <#2>", body)
 
 
 if __name__ == "__main__":
