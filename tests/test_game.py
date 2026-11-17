@@ -63,6 +63,27 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(len(spots), 4)
         self.assertTrue(all(p.ap == 0 for p in g.state.players.values()))
 
+    def test_no_cardinal_touching_at_spawn(self):
+        for n in range(2, 21):
+            for seed in range(25):
+                g = Game(rng=random.Random(seed))
+                for i in range(n):
+                    g.register(f"u{i}", f"State {i}")
+                self.assertTrue(g.start().ok)
+                spots = {(p.x, p.y) for p in g.state.players.values()}
+                self.assertEqual(len(spots), n)
+                for x, y in spots:
+                    for nb in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+                        self.assertNotIn(nb, spots, f"{n} players, seed {seed}: touching at {(x, y)}")
+
+    def test_spawn_spacing_can_be_disabled(self):
+        g = Game(rng=random.Random(0))
+        g.state.settings["spawn_no_cardinal_touch"] = 0
+        g.state.settings["board_size"] = 2
+        g.register("a", "A State")
+        g.register("b", "B State")
+        self.assertTrue(g.start().ok)
+
     def test_auto_board_size(self):
         g = Game()
         sizes = {n: g.auto_board_size(n) for n in (2, 3, 5, 8, 10, 12, 16, 20)}

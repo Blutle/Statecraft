@@ -60,6 +60,11 @@ class Sim:
         self.call("register-dup", self.g.register("someone", sorted(names)[0]), expect_ok=False)
         self.call("start", self.g.start(), expect_ok=True)
         self.call("start-again", self.g.start(), expect_ok=False)
+        if self.g.s["spawn_no_cardinal_touch"]:
+            spots = {(p.x, p.y) for p in self.g.state.players.values()}
+            for x, y in spots:
+                if spots & {(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)}:
+                    self.fail(f"states start cardinally adjacent at {geometry.coord_label(x, y)}")
         self.call("register-late", self.g.register("late", "Too Late"), expect_ok=False)
         self.check_board()
 

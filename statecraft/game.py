@@ -172,6 +172,27 @@ class Game:
             size += 1
         return size
 
+    def _spawn_squares(self, size: int, n: int) -> list[tuple[int, int]]:
+        """Random starting squares. With spawn_no_cardinal_touch on, no two
+        states start directly N/S/E/W of each other (diagonal contact is fine).
+
+        Always solvable: a board with at least 2 squares per state has a
+        checkerboard color with room for everyone, used as a fallback."""
+        squares = [(x, y) for x in range(size) for y in range(size)]
+        if not self.s["spawn_no_cardinal_touch"]:
+            return self.rng.sample(squares, n)
+        for _ in range(200):
+            available = set(squares)
+            chosen = []
+            while len(chosen) < n and available:
+                x, y = self.rng.choice(sorted(available))
+                chosen.append((x, y))
+                available -= {(x, y), (x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)}
+            if len(chosen) == n:
+                return chosen
+        colors = [[(x, y) for x, y in squares if (x + y) % 2 == c] for c in (0, 1)]
+        return self.rng.sample(max(colors, key=len), n)
+
     @recorded("start")
     def start(self) -> Result:
         if self.state.phase != "registration":
@@ -184,8 +205,7 @@ class Game:
         if size * size < n * 2:
             return Result.fail(f"A {size}x{size} board is too small for {n} states.")
         self.state.board_size = size
-        squares = [(x, y) for x in range(size) for y in range(size)]
-        for p, (x, y) in zip(players, self.rng.sample(squares, n)):
+        for p, (x, y) in zip(players, self._spawn_squares(size, n)):
             p.x, p.y = x, y
             p.hp = self.s["starting_hp"]
             p.ap = 0

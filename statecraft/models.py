@@ -17,6 +17,7 @@ DEFAULT_SETTINGS = {
     "votes_per_ap": 3,
     "board_size": 0,             # 0 = automatic, using board_scale_pct
     "board_scale_pct": 75,       # automatic side = players * pct // 100 (16 players -> 12x12)
+    "spawn_no_cardinal_touch": 1,  # 1 = no two states start directly N/S/E/W of each other
 }
 
 
