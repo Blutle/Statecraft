@@ -7,6 +7,7 @@ acts as them. No clock, action window, or cooldowns: `nextday` advances time.
 from __future__ import annotations
 
 import argparse
+import sys
 import random
 import shlex
 from pathlib import Path
@@ -51,6 +52,7 @@ MESSAGES (free, logged in full, including anonymous posts' real author; jurors t
 TIME / ADMIN
   nextday                       End the day: jury tally, then +1 AP to survivors
   give <player> <amount>        Admin: add (or remove, if negative) AP
+  edit <player> <field> <value> Admin: set name, abbreviation, ap, hp, range, position, cooldown, owner
   declare <state> [state...]    Admin: end the game with these survivors as (joint) winners
   juryscore                     Admin: after the game, rank jurors by votes for the winner(s)
   history [n]                   Admin: last n records of the full history log (default 10)
@@ -332,6 +334,14 @@ class CLI:
             print(f"  {p.owner_name:<14} {p.state_name:<{render_text._w(self.game)}} {r['for_winner']:>10} "
                   f"{r['ballots']:>8} {r['nights']:>7} {r['rate']:>6.0%}")
 
+    def cmd_edit(self, a):
+        if len(a) < 3:
+            print("Usage: edit <player> <field> <value>   fields: " + ", ".join(Game.ADMIN_FIELDS))
+            return
+        p = self._find(a[0])
+        if p:
+            self.show(self.game.admin_edit(p.id, a[1], " ".join(a[2:])))
+
     def cmd_give(self, a):
         if len(a) < 2 or not a[-1].lstrip("-").isdigit():
             print("Usage: give <player> <amount>")
@@ -346,7 +356,13 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--file", default="game.json", help="game save file (default: game.json)")
     parser.add_argument("--seed", type=int, default=None, help="random seed for reproducible placement")
     args = parser.parse_args(argv)
+    # Windows consoles can't print some characters (e.g. arrows); show '?' rather than crash
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="replace")
     try:
-        CLI(Path(args.file), seed=args.seed).run()
+        cli = CLI(Path(args.file), seed=args.seed)
     except ValueError as e:
         print(f"Could not load {args.file}: {e}")
+        return
+    cli.run()

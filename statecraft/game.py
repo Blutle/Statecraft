@@ -612,6 +612,134 @@ class Game:
         return self._done(Result(True, "Game ended.", [Event(
             "GAME_OVER", public=f"The game is over. {names} {verb} of Statecraft!", ping="mandatory")]))
 
+    # Referee edits: every stored attribute of a state.
+    ADMIN_FIELDS = {
+        "name": "name", "abbreviation": "abbreviation", "ap": "AP", "hp": "HP", "range": "range",
+        "position": "position", "cooldown": "cooldown", "owner": "owner name",
+    }
+    PUBLIC_FIELDS = {"name", "abbreviation", "hp", "range", "position"}
+
+    def admin_value(self, p: Player, field: str) -> str:
+        """Current value of an editable field, as text."""
+        return {
+            "name": p.state_name, "abbreviation": p.marker, "ap": str(p.ap), "hp": str(p.hp),
+            "range": str(self.range_of(p)), "position": self.pos(p), "owner": p.owner_name,
+            "cooldown": "active" if p.last_action else "ready",
+        }[field]
+
+    def _name_problem(self, name: str, exclude: Player) -> str:
+        if not name:
+            return "The name can't be empty."
+        if len(name) > MAX_NAME_LEN:
+            return f"State names are limited to {MAX_NAME_LEN} characters."
+        if any(c in name for c in "@#<>`*_~|\\"):
+            return "State names can't contain @ # < > ` * _ ~ | or backslashes."
+        if any(q is not exclude and q.state_name.lower() == name.lower() for q in self.state.players.values()):
+            return f"The name '{name}' is already taken."
+        return ""
+
+    @recorded("admin_edit")
+    def admin_edit(self, pid: str, field: str, value: str, announce: bool = True) -> Result:
+        """Referee: set any stored attribute of a state (validated like normal play)."""
+        p = self.get(pid)
+        if not p:
+            return Result.fail("No such state.")
+        field = field.lower().strip()
+        if field not in self.ADMIN_FIELDS:
+            return Result.fail("Field must be one of: " + ", ".join(self.ADMIN_FIELDS))
+        value = " ".join(str(value).split())
+        label = self.ADMIN_FIELDS[field]
+        old = self.admin_value(p, field)
+        old_name = p.state_name
+        extra: list[Event] = []
+
+        def number(lo: int, hi: int = 999) -> tuple[int | None, str]:
+            try:
+                n = int(value)
+            except ValueError:
+                return None, f"{label} must be a whole number."
+            if not lo <= n <= hi:
+                return None, f"{label} must be between {lo} and {hi}."
+            return n, ""
+
+        if field == "name":
+            if err := self._name_problem(value, p):
+                return Result.fail(err)
+            p.state_name = value
+        elif field == "abbreviation":
+            abbr = value.upper()
+            if not (len(abbr) == ABBREV_LEN and abbr.isascii() and abbr.isalpha()):
+                return Result.fail(f"Abbreviations must be exactly {ABBREV_LEN} letters (A-Z).")
+            if any(q is not p and q.marker == abbr for q in self.state.players.values()):
+                return Result.fail(f"The abbreviation {abbr} is already taken.")
+            p.marker = abbr
+        elif field == "ap":
+            n, err = number(0)
+            if err:
+                return Result.fail(err)
+            p.ap = n
+        elif field == "range":
+            n, err = number(1, 99)
+            if err:
+                return Result.fail(err)
+            p.range_upgrades = n - self.s["base_range"]
+        elif field == "position":
+            if self.state.board_size == 0:
+                return Result.fail("Positions exist once the game has started.")
+            sq = geometry.parse_label(value)
+            if not sq or not geometry.on_board(*sq, self.state.board_size):
+                return Result.fail(f"'{value}' isn't a square on the board (e.g. C5).")
+            occ = self.occupant(*sq)
+            if occ and occ is not p:
+                return Result.fail(f"{geometry.coord_label(*sq)} is occupied by {occ.state_name}.")
+            p.x, p.y = sq
+        elif field == "cooldown":
+            if value.lower() not in ("reset", "ready", "0", "clear"):
+                return Result.fail("Cooldown can only be reset: use the value 'reset'.")
+            p.last_action = None
+        elif field == "owner":
+            if not value:
+                return Result.fail("The owner name can't be empty.")
+            p.owner_name = value
+        elif field == "hp":
+            n, err = number(0, 99)
+            if err:
+                return Result.fail(err)
+            if self.state.phase != "active" and (n == 0 or not p.alive):
+                return Result.fail("Destroying or reviving a state only works during a game.")
+            was_alive = p.alive
+            p.hp = n
+            if n == 0 and was_alive:                    # destroyed by the referee
+                p.alive = False
+                p.eliminated_on_day = self.state.day
+                if p.id in self.state.info_access:
+                    self.state.info_access.remove(p.id)
+                extra.append(Event(
+                    "ELIMINATION",
+                    public=(f"{p.state_name} has been destroyed by the referee. It was controlled by "
+                            f"{p.owner_name}, who now joins the Jury."),
+                    private={p.id: "Your state has been destroyed. You are now on the Jury and can vote each night."},
+                    ping="mandatory", data={"victim": p.id, "attacker": None}))
+                extra += self._check_victory()
+            elif n > 0 and not was_alive:               # revived by the referee
+                p.alive = True
+                p.eliminated_on_day = None
+                self.state.jury_votes.pop(p.id, None)
+                extra.append(Event("REVIVED", public=f"{p.state_name} has been restored by the referee.",
+                                   ping="mandatory", data={"pid": p.id}))
+
+        new = self.admin_value(p, field)
+        if new == old and not extra:
+            return Result.fail(f"{old_name}'s {label} is already {old}.")
+        data = {"pid": p.id, "field": field, "old": old, "new": new}
+        public = None
+        if announce and field in self.PUBLIC_FIELDS and not extra:
+            public = f"Referee adjustment: {old_name}'s {label} changed from {old} to {new}."
+        events = [Event("ADMIN_EDIT", public=public,
+                        private={p.id: f"The referee changed your {label} from {old} to {new}."}, data=data)]
+        events += extra
+        return self._done(Result(True, f"[Admin] {p.state_name}: {label} {old} → {new}.", events))
+
     @recorded("admin_give_ap")
     def give_ap(self, pid: str, amount: int) -> Result:
         p = self.get(pid)

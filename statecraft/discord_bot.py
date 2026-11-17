@@ -31,10 +31,10 @@ from .models import Event, Result
 
 log = logging.getLogger("statecraft")
 
-PUBLIC_KINDS_PLAYERS_PING = {"ATTACK", "ELIMINATION", "GAME_OVER", "GAME_START"}
+PUBLIC_KINDS_PLAYERS_PING = {"ATTACK", "ELIMINATION", "GAME_OVER", "GAME_START", "REVIVED"}
 PUBLIC_KINDS_UPDATES_PING = {"MOVE", "UPGRADE", "INFO_PURCHASE"}
 BOARD_CHANGING = {"GAME_START", "MOVE", "ATTACK", "ELIMINATION", "UPGRADE", "DAILY_AP",
-                  "JURY_RESULT", "GAME_OVER"}
+                  "JURY_RESULT", "GAME_OVER", "ADMIN_EDIT", "REVIVED"}
 CHAT_KINDS = {"PUBLIC_CHAT", "ANONYMOUS", "PRIVATE_MESSAGE", "PACT_MESSAGE"}   # no panel refresh needed
 DIRECTIONS = [app_commands.Choice(name=n, value=v) for n, v in [
     ("North (up)", "n"), ("North-east", "ne"), ("East (right)", "e"), ("South-east", "se"),
@@ -108,6 +108,10 @@ class Router:
 
         if ev.kind == "ELIMINATION":
             await self.grant_role(ev.data["victim"], "jury")
+        if ev.kind == "REVIVED":
+            await self.revoke_role(ev.data["pid"], "jury")
+        if ev.kind == "ADMIN_EDIT" and ev.data["field"] == "name":
+            await self.rename_dm_threads(ev.data["pid"])
         if ev.kind in ("PACT_JOINED", "PACT_LEFT", "PACT_KICKED", "PACT_MESSAGE"):
             await self._pact(ev)
 
@@ -322,6 +326,31 @@ class Router:
             await member.add_roles(discord.Object(rid), reason="Statecraft")
         except (discord.NotFound, ValueError):
             pass
+
+    async def revoke_role(self, pid: str, key: str) -> None:
+        if self.svc.is_fake(pid):
+            return
+        guild = self.bot.get_guild(self.svc.cfg.guild_id)
+        rid = self.svc.role_id(key)
+        if not guild or not rid:
+            return
+        try:
+            member = await guild.fetch_member(int(pid))
+            await member.remove_roles(discord.Object(rid), reason="Statecraft")
+        except (discord.NotFound, ValueError):
+            pass
+
+    async def rename_dm_threads(self, pid: str) -> None:
+        """After a referee rename, retitle other players' conversation threads with this state."""
+        name = self.svc.game.get(pid).state_name
+        for owner, threads in self.svc.server.get("dm_threads", {}).items():
+            tid = threads.get(pid)
+            th = self.bot.get_channel(tid) if tid else None
+            if th:
+                try:
+                    await th.edit(name=f"↔ {name}"[:100])
+                except discord.HTTPException:
+                    pass
 
     async def refresh_board(self) -> None:
         ch = self.channel("game_board")
@@ -821,6 +850,37 @@ def register_commands(bot: StatecraftBot) -> None:
         tid, err = ui.resolve(state)
         await ui.reply(i, await svc.run(lambda g, now: g.give_ap(tid, amount)) if tid else Result.fail(err),
                        ephemeral=True)
+
+    @admin.command(description="Edit any stored value of a state: name, abbreviation, AP, HP, range, position...")
+    @app_commands.autocomplete(state=any_states)
+    @app_commands.choices(field=[app_commands.Choice(name=n, value=v) for n, v in [
+        ("Name", "name"), ("Abbreviation", "abbreviation"), ("AP", "ap"), ("HP (0 destroys, >0 revives)", "hp"),
+        ("Range", "range"), ("Position (square like C5)", "position"), ("Cooldown (value: reset)", "cooldown"),
+        ("Owner name (revealed on elimination)", "owner")]])
+    @app_commands.describe(value="New value: text, a number, a square like C5, or 'reset' for cooldown",
+                           announce="Post changes to public stats in #action-log (default: yes)")
+    async def edit(i: discord.Interaction, state: str, field: app_commands.Choice[str], value: str,
+                   announce: bool = True):
+        if not await admin_only(i):
+            return
+        tid, err = ui.resolve(state)
+        if not tid:
+            await i.response.send_message(f"Rejected: {err}", ephemeral=True)
+            return
+        g = svc.game
+        p = g.get(tid)
+        current = g.admin_value(p, field.value)
+        visibility = ("announced in #action-log" if announce and field.value in g.PUBLIC_FIELDS
+                      else "not announced publicly")
+        warn = ""
+        if field.value == "hp" and value.strip() == "0" and p.alive:
+            warn = "\n**This destroys the state** and reveals its owner."
+        elif field.value == "hp" and not p.alive:
+            warn = "\n**This revives the state** and removes its Jury role."
+        await ui.confirm_action(
+            i, f"Set **{p.state_name}**'s {g.ADMIN_FIELDS[field.value]} from **{current}** to **{value}**? "
+               f"The player is told privately; this change is {visibility}.{warn}",
+            lambda g, now: g.admin_edit(tid, field.value, value, announce))
 
     @admin.command(description="End the game with these states as (joint) winners")
     @app_commands.describe(states="Markers or names separated by commas, e.g. VE, WE")

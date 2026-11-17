@@ -39,5 +39,13 @@ def coord_label(x: int, y: int) -> str:
     return f"{column_label(x)}{y + 1}"
 
 
+def parse_label(label: str) -> tuple[int, int] | None:
+    """'C5' -> (2, 4); None if it isn't a square label."""
+    label = label.strip().upper()
+    if len(label) < 2 or not label[0].isalpha() or not label[1:].isdigit():
+        return None
+    return ord(label[0]) - ord("A"), int(label[1:]) - 1
+
+
 def column_label(x: int) -> str:
     return chr(ord("A") + x)
