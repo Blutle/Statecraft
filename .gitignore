@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Runtime game state and generated files
+game.json
+game.json.tmp
+game.json.bak
+board.png
+
+# Secrets (Discord token, later)
+.env
