@@ -283,7 +283,6 @@ class Router:
                         guild.me: discord.PermissionOverwrite(**discord_setup.BOT_PERMS),
                         member: discord.PermissionOverwrite(view_channel=True, send_messages=True,
                                                             read_message_history=True,
-                                                            attach_files=True, embed_links=True,
                                                             **discord_setup.PLAYER_PRIVATE)},
             reason="Statecraft pact")
         hook = await ch.create_webhook(name="Statecraft Pact Relay", reason="Statecraft pact")
@@ -625,8 +624,7 @@ class StatecraftBot(discord.Client):
             if str(message.author.id) != owner:
                 return
             text = message.content.strip()
-            if message.attachments:
-                text = (text + "\n" + "\n".join(a.url for a in message.attachments)).strip()
+            # Attachments are never relayed: file names and photo metadata can identify the sender
             if not text:
                 return
             res = await self.svc.run(lambda g, now: g.dm(owner, other, text))
@@ -642,8 +640,7 @@ class StatecraftBot(discord.Client):
         if str(message.author.id) != owner:          # e.g. the referee looking in
             return
         text = message.content.strip()
-        if message.attachments:
-            text = (text + "\n" + "\n".join(a.url for a in message.attachments)).strip()
+        # Attachments are never relayed: file names and photo metadata can identify the sender
         if not text:
             return
         res = await self.svc.run(lambda g, now: g.pact_message(owner, pact_id, text))

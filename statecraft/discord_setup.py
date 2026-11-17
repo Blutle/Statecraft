@@ -53,19 +53,23 @@ BOT_PERMS = dict(view_channel=True, send_messages=True, embed_links=True, attach
                  create_private_threads=True, add_reactions=True)
 # Players can't post in read-only channels, so no slash commands there either.
 # Reactions are off in every game channel: hovering a reaction shows the real
-# Discord name of whoever added it. Only #jury keeps them, since jurors have
-# already been revealed. Channels outside Statecraft are never touched.
+# Discord name of whoever added it. Files, images, and link embeds are off too:
+# a file's name or photo metadata can identify its sender, and relayed files
+# would carry it across. Only #jury keeps all three, since jurors have already
+# been revealed. The bot and the referee (Administrator) are unaffected, and
+# channels outside Statecraft are never touched.
 # "Use External Apps" is denied everywhere: an app a player installed on their
 # own account would post its response under their real Discord name.
 READ_ONLY = dict(view_channel=True, read_message_history=True, send_messages=False,
                  send_messages_in_threads=False, create_public_threads=False,
-                 create_private_threads=False, add_reactions=False,
+                 create_private_threads=False, add_reactions=False, attach_files=False, embed_links=False,
                  use_application_commands=False, use_external_apps=False)
 HIDDEN = dict(view_channel=False)
-MEMBER = dict(view_channel=True, read_message_history=True, send_messages=True, add_reactions=False,
-              use_external_apps=False)
+NO_MEDIA = dict(add_reactions=False, attach_files=False, embed_links=False)
+MEMBER = dict(view_channel=True, read_message_history=True, send_messages=True, use_external_apps=False, **NO_MEDIA)
+JURY_EXTRAS = dict(add_reactions=True, attach_files=True, embed_links=True)
 # Per-player overwrites on consoles and pact channel copies
-PLAYER_PRIVATE = dict(use_external_apps=False, add_reactions=False)
+PLAYER_PRIVATE = dict(use_external_apps=False, **NO_MEDIA)
 
 
 def _overwrites(guild: discord.Guild, access: str, roles: dict[str, discord.Role]) -> dict:
@@ -77,7 +81,7 @@ def _overwrites(guild: discord.Guild, access: str, roles: dict[str, discord.Role
         return {everyone: discord.PermissionOverwrite(**MEMBER, use_application_commands=True), **bot}
     if access == "jury":
         return {everyone: discord.PermissionOverwrite(**HIDDEN),
-                roles["jury"]: discord.PermissionOverwrite(**{**MEMBER, "add_reactions": True}), **bot}
+                roles["jury"]: discord.PermissionOverwrite(**{**MEMBER, **JURY_EXTRAS}), **bot}
     if access == "hidden":
         return {everyone: discord.PermissionOverwrite(**HIDDEN), **bot}
     if access == "admin":
@@ -193,18 +197,20 @@ async def ensure_server(guild: discord.Guild, path: Path, echo=None) -> list[str
         report.append("found #public-chat webhook")
     data["public_chat_webhook_id"] = hook.id
 
-    # Existing consoles and pact copies: make sure players can't use external apps there
+    # Existing consoles and pact copies: bring each player's overwrite up to date
+    # (no external apps, reactions, files, or embeds)
     patched = 0
     for cid in [data.get("console_category_id")] + saved.get("state_categories", []) + saved.get("pact_categories", []):
         cat = guild.get_channel(cid or 0)
         for ch in (cat.channels if cat else []):
             for target, ow in ch.overwrites.items():
-                if isinstance(target, discord.Member) and target != guild.me and ow.use_external_apps is not False:
+                if (isinstance(target, discord.Member) and target != guild.me
+                        and any(getattr(ow, k) is not v for k, v in PLAYER_PRIVATE.items())):
                     ow.update(**PLAYER_PRIVATE)
                     await ch.set_permissions(target, overwrite=ow, reason="Statecraft setup (repair)")
                     patched += 1
     if patched:
-        report.append(f"blocked external apps for {patched} player channel(s)")
+        report.append(f"updated player permissions in {patched} console/pact channel(s)")
 
     # Keep everything else already recorded (consoles, panels, pacts, DM threads, guides, ...):
     # setup only refreshes the layout keys it manages.

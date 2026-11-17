@@ -182,7 +182,12 @@ class ReactionPermissionTests(unittest.TestCase):
         self.assertFalse(ds.READ_ONLY["add_reactions"])
         self.assertFalse(ds.MEMBER["add_reactions"])
         self.assertFalse(ds.PLAYER_PRIVATE["add_reactions"])
-        self.assertTrue(ds.BOT_PERMS["add_reactions"])     # the bot must hold what it sets
+        for perms in (ds.READ_ONLY, ds.MEMBER, ds.PLAYER_PRIVATE):   # no files, images, or link embeds
+            self.assertFalse(perms["attach_files"])
+            self.assertFalse(perms["embed_links"])
+        self.assertTrue(all(ds.JURY_EXTRAS.values()))       # #jury keeps them
+        for k in ("add_reactions", "attach_files", "embed_links"):
+            self.assertTrue(ds.BOT_PERMS[k])                 # the bot must hold what it sets
 
 
 if __name__ == "__main__":

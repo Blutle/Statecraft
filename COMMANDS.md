@@ -19,7 +19,7 @@ Every command is a slash command. Replies are **private** (only the person who r
 
 **Other apps:**
 - **"Use External Apps" is denied** in every game channel, console, and pact channel. An app a player installed on their own Discord account would post its response under their real name, which would break the masking.
-- **Reactions are off** in every game channel, console, and pact channel, because hovering a reaction shows the real name of whoever added it. Only #jury keeps them (jurors are already revealed). Channels outside Statecraft, like out-of-game chat, are untouched. `/admin setup` applies this to the existing game channels.
+- **Reactions, files/images, and link embeds are off** for players in every game channel, console, and pact channel. Hovering a reaction shows the real name of whoever added it, and a file's name or photo metadata can identify its sender. The relays never forward attachments either. Only #jury keeps all three (jurors are already revealed). The bot and the referee are unaffected, and channels outside Statecraft, like out-of-game chat, are untouched. `/admin setup` applies this to existing game channels, consoles, and pact channels.
 - **Slash commands are disabled** in the read-only channels.
 - **Other bots' commands** can only be limited per bot, by a server admin under **Server Settings → Integrations → [bot] → Manage**. The simplest option is to not add other bots to the game server.
 
