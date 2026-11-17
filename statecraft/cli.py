@@ -19,7 +19,8 @@ HELP = """
 SETUP
   add <player> <state name>     Register a player and their state (quotes optional)
   remove <player>               Remove a player (registration only)
-  start                         Place states randomly and begin the game
+  start                         Place states randomly and begin the game (needs 12 players)
+  start force                   Start with fewer players (2+), for testing
   reset                         Wipe the game (asks for confirmation)
 
 WHO AM I
@@ -42,7 +43,7 @@ ACTIONS (current player)
   buyinfo                       See today's AP gifts                (1 AP)
   vote <state>                  Jury only: vote for a surviving state
 
-MESSAGES (free, logged in full, including anonymous posts' real author)
+MESSAGES (free, logged in full, including anonymous posts' real author; jurors too)
   say <message>                 Public diplomacy, posted under your state's name
   dm <state> <message>          Private message to another state (quote multi-word names)
   anon <message>                Anonymous public post
@@ -154,7 +155,7 @@ class CLI:
             self.show(self.game.unregister(p.id))
 
     def cmd_start(self, a):
-        res = self.game.start()
+        res = self.game.start(force=bool(a) and a[0].lower() == "force")
         self.show(res)
         if res.ok:
             print()

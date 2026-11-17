@@ -46,7 +46,7 @@ def make_game(n=4, seed=1, size=0) -> Game:
     names = ["Republic of Aldren", "Veyran Empire", "Free Cities", "Westhaven", "Iron Dominion", "Kesh"]
     for i in range(n):
         assert g.register(f"player{i + 1}", names[i]).ok
-    assert g.start().ok
+    assert g.start(force=True).ok
     return g
 
 
@@ -69,7 +69,7 @@ class LifecycleTests(unittest.TestCase):
                 g = Game(rng=random.Random(seed))
                 for i in range(n):
                     g.register(f"u{i}", f"State {i}")
-                self.assertTrue(g.start().ok)
+                self.assertTrue(g.start(force=True).ok)
                 spots = {(p.x, p.y) for p in g.state.players.values()}
                 self.assertEqual(len(spots), n)
                 for x, y in spots:
@@ -82,7 +82,7 @@ class LifecycleTests(unittest.TestCase):
         g.state.settings["board_size"] = 2
         g.register("a", "A State")
         g.register("b", "B State")
-        self.assertTrue(g.start().ok)
+        self.assertTrue(g.start(force=True).ok)
 
     def test_auto_board_size(self):
         g = Game()
@@ -94,7 +94,7 @@ class LifecycleTests(unittest.TestCase):
         g.state.settings["board_size"] = 10
         for i in range(4):
             g.register(f"u{i}", f"State {i}")
-        g.start()
+        g.start(force=True)
         self.assertEqual(g.state.board_size, 10)
 
     def test_duplicate_names_rejected(self):
@@ -110,10 +110,27 @@ class LifecycleTests(unittest.TestCase):
         markers = [p.marker for p in g.state.players.values()]
         self.assertEqual(len(set(markers)), 2)
 
+    def test_minimum_twelve_players(self):
+        g = Game()
+        for i in range(11):
+            g.register(f"u{i}", f"State {i}")
+        res = g.start()
+        self.assertFalse(res.ok)
+        self.assertIn("12", res.message)
+        g.register("u11", "State 11")
+        self.assertTrue(g.start().ok)
+
+    def test_force_start_for_testing(self):
+        g = Game()
+        g.register("a", "A State")
+        g.register("b", "B State")
+        self.assertFalse(g.start().ok)
+        self.assertTrue(g.start(force=True).ok)
+
     def test_need_two_players(self):
         g = Game()
         g.register("a", "Solo")
-        self.assertFalse(g.start().ok)
+        self.assertFalse(g.start(force=True).ok)
 
 
 class ActionTests(unittest.TestCase):
@@ -261,7 +278,7 @@ class DeclareWinnersTests(unittest.TestCase):
         g = Game(rng=random.Random(4))
         for i in range(n):
             g.register(f"u{i:02d}", f"State {i:02d}")
-        g.start()
+        g.start(force=True)
         for p in list(g.state.players.values())[alive:]:
             p.alive, p.hp, p.eliminated_on_day = False, 0, 1
         return g
@@ -300,7 +317,7 @@ class HistoryTests(unittest.TestCase):
         g = Game(rng=random.Random(1), recorder=records.append)
         g.register("greg", "Westhaven")
         g.register("sam", "Kesh")
-        g.start()
+        g.start(force=True)
         g.move("p1", "n")                            # rejected: 0 AP
         g.anon("p2", "trust no one")
         g.dm("p1", "p2", "ally?")
@@ -324,6 +341,18 @@ class HistoryTests(unittest.TestCase):
             h2.append({"action": "c"})
             self.assertEqual([r["seq"] for r in h2.tail(10)], [1, 2, 3])
             self.assertTrue(h.path.name.endswith(".history.jsonl"))
+
+
+class JurorSocialTests(unittest.TestCase):
+    def test_eliminated_players_keep_social_access(self):
+        g = make_game(3)
+        g.get("p3").alive, g.get("p3").hp = False, 0
+        self.assertTrue(g.say("p3", "The jury remembers.").ok)
+        self.assertTrue(g.dm("p3", "p1", "I'm voting for you").ok)
+        self.assertTrue(g.dm("p1", "p3", "thanks").ok)       # living can message jurors
+        self.assertTrue(g.anon("p3", "psst").ok)
+        self.assertFalse(g.dm("p3", "p3", "me").ok)
+        self.assertFalse(g.move("p3", "n").ok)               # but still no gameplay
 
 
 class StoreTests(unittest.TestCase):

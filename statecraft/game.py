@@ -194,12 +194,15 @@ class Game:
         return self.rng.sample(max(colors, key=len), n)
 
     @recorded("start")
-    def start(self) -> Result:
+    def start(self, force: bool = False) -> Result:
+        """Begin the game. Needs min_players (12); force allows down to 2 for testing."""
         if self.state.phase != "registration":
             return Result.fail("The game has already started.")
         players = list(self.state.players.values())
-        if len(players) < 2:
-            return Result.fail("At least 2 players are needed to start.")
+        minimum = 2 if force else max(2, self.s["min_players"])
+        if len(players) < minimum:
+            return Result.fail(f"At least {minimum} players are needed to start ({len(players)} registered)."
+                               + ("" if force else " Use 'start force' to test with fewer."))
         n = len(players)
         size = self.s.get("board_size") or self.auto_board_size(n)
         if size * size < n * 2:
@@ -511,12 +514,13 @@ class Game:
 
     @recorded("say")
     def say(self, pid: str, text: str) -> Result:
-        """Public diplomacy, posted under the state's name."""
+        """Public diplomacy, posted under the state's name. Eliminated players
+        keep full social access (they only gain the jury chat)."""
         p = self.get(pid)
         if not p:
             return Result.fail("You are not a player in this game.")
-        if self.state.phase != "active" or not p.alive:
-            return Result.fail("Only living states in an active game can post diplomacy.")
+        if self.state.phase != "active":
+            return Result.fail("Diplomacy is only open while the game is in progress.")
         text, err = self._message_text(text)
         if err:
             return Result.fail(err)
@@ -528,10 +532,10 @@ class Game:
         p, t = self.get(pid), self.get(tid)
         if not p:
             return Result.fail("You are not a player in this game.")
-        if self.state.phase != "active" or not p.alive:
-            return Result.fail("Only living states in an active game can send private diplomacy.")
-        if not t or not t.alive:
-            return Result.fail("You can only message a surviving state.")
+        if self.state.phase != "active":
+            return Result.fail("Diplomacy is only open while the game is in progress.")
+        if not t:
+            return Result.fail("No such state.")
         if t.id == p.id:
             return Result.fail("You can't message yourself.")
         text, err = self._message_text(text)

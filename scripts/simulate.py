@@ -58,7 +58,7 @@ class Sim:
             self.call("register", self.g.register(f"user{i + 1:02d}", name), expect_ok=True)
         # Illegal setup actions
         self.call("register-dup", self.g.register("someone", sorted(names)[0]), expect_ok=False)
-        self.call("start", self.g.start(), expect_ok=True)
+        self.call("start", self.g.start(force=n_players < self.g.s["min_players"]), expect_ok=True)
         self.call("start-again", self.g.start(), expect_ok=False)
         if self.g.s["spawn_no_cardinal_touch"]:
             spots = {(p.x, p.y) for p in self.g.state.players.values()}
