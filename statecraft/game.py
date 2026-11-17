@@ -22,7 +22,8 @@ from . import geometry, schedule
 from .models import Event, GameState, Player, Result
 
 STOPWORDS = {"the", "of", "and", "a", "an", "de", "la", "le", "du", "von", "van"}
-MAX_NAME_LEN = 40
+MAX_NAME_LEN = 24          # state names: sized so the board legend never cuts one off
+MAX_PACT_NAME_LEN = 40
 ABBREV_LEN = 3
 MAX_MESSAGE_LEN = 1500
 
@@ -707,8 +708,8 @@ class Game:
         if err:
             return Result.fail(err)
         name = " ".join(name.split())
-        if not name or len(name) > MAX_NAME_LEN:
-            return Result.fail(f"Pact names must be 1-{MAX_NAME_LEN} characters.")
+        if not name or len(name) > MAX_PACT_NAME_LEN:
+            return Result.fail(f"Pact names must be 1-{MAX_PACT_NAME_LEN} characters.")
         if any(c in name for c in "@#<>`*_~|\\"):
             return Result.fail("Pact names can't contain @ # < > ` * _ ~ | or backslashes.")
         founded = sum(1 for pc in self.state.pacts.values() if pc["original_founder"] == pid)

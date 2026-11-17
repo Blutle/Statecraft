@@ -77,6 +77,15 @@ def _centered(draw: ImageDraw.ImageDraw, xy, text, font, fill):
     draw.text((x - (r - l) / 2 - l, y - (b - t) / 2 - t), text, font=font, fill=fill)
 
 
+def _fit(draw: ImageDraw.ImageDraw, text: str, max_width: float, size: int, bold: bool, min_size: int = 10):
+    """The largest font (from `size` down to `min_size`) at which `text` fits."""
+    for s in range(size, min_size - 1, -1):
+        font = _font(s, bold)
+        if draw.textlength(text, font=font) <= max_width:
+            return font
+    return _font(min_size, bold)
+
+
 def _pips(draw, cx, y, hp, max_hp, size, fill_on, fill_off):
     gap = size * 0.55
     total = max_hp * size + (max_hp - 1) * gap
@@ -128,10 +137,14 @@ def render(game: Game, focus: str | None = None, viewer: str | None = None) -> b
     title = f"Statecraft · Day {st.day}"
     sub = f"{len(alive)} of {len(players)} states remain"
     if st.phase == "ended":
-        names = [game.get(w).state_name for w in game.winners()]
-        sub = ("Game over · winners: " if len(names) > 1 else "Game over · winner: ") + ", ".join(names)
+        win = [game.get(w) for w in game.winners()]
+        lead = "Game over · winners: " if len(win) > 1 else "Game over · winner: "
+        sub = lead + ", ".join(w.state_name for w in win)
+        if d.textlength(sub, font=_font(14)) > width - 2 * pad:      # too long to read: use abbreviations
+            sub = lead + ", ".join(w.marker for w in win)
     d.text((pad, 14), title, font=_font(28, True), fill=TEXT)
-    d.text((pad, 46), sub, font=_font(17), fill=MUTED)
+    sub_room = width - 2 * pad - (260 if focus_p else 0)
+    d.text((pad, 46), sub, font=_fit(d, sub, sub_room, 17, False, min_size=14), fill=MUTED)
     if focus_p:
         note = f"Showing range {game.range_of(focus_p)} of {focus_p.marker}"
         tw = d.textlength(note, font=_font(17, True))
@@ -229,12 +242,11 @@ def render(game: Game, focus: str | None = None, viewer: str | None = None) -> b
         tx = x + sw * 1.6 + 10
         name = p.state_name
         max_name = col_w - sw * 1.6 - 20
-        while d.textlength(name, font=nf) > max_name and len(name) > 4:
-            name = name[:-2] + "…" if not name.endswith("…") else name[:-2] + "…"
+        name_font = _fit(d, name, max_name, 17, True)     # all-caps names get a little smaller
         tags = []
         if viewer_p and p.id == viewer_p.id:
             tags.append("you")
-        d.text((tx, y - 1), name, font=nf, fill=TEXT if p.alive else DEAD_TEXT)
+        d.text((tx, y - 1), name, font=name_font, fill=TEXT if p.alive else DEAD_TEXT)
         if p.alive:
             detail = f"HP {p.hp}/{max_hp} · range {game.range_of(p)} · {game.pos(p)}"
             colour = MUTED

@@ -496,9 +496,9 @@ def register_commands(bot: StatecraftBot) -> None:
                                                overwrites=overwrites, reason="Statecraft console")
 
     @tree.command(description="Name (or rename) your state before the game starts")
-    @app_commands.describe(name="Your state's name, up to 40 characters",
+    @app_commands.describe(name="Your state's name, up to 24 characters",
                            abbreviation="3 letters shown on the board, e.g. IRN (leave out for automatic)")
-    async def name(i: discord.Interaction, name: app_commands.Range[str, 1, 40],
+    async def name(i: discord.Interaction, name: app_commands.Range[str, 1, 24],
                    abbreviation: app_commands.Range[str, 3, 3] | None = None):
         if pid := await ui.console_pid(i, need_state=False):
             await ui.reply(i, await svc.run(lambda g, now: g.register(i.user.display_name, name, pid=pid,

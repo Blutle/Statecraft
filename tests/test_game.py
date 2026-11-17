@@ -144,6 +144,12 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(len(set(marks)), len(marks))
         self.assertTrue(all(len(m) == 3 and m.isalpha() and m.isascii() for m in marks), marks)
 
+    def test_state_name_length_limit(self):
+        g = Game()
+        self.assertTrue(g.register("a", "X" * 24, pid="1").ok)
+        self.assertFalse(g.register("b", "Y" * 25, pid="2").ok)
+        self.assertTrue(g.create_pact("1", "P" * 40).ok)          # pact names keep their 40 limit
+
     def test_state_names_reject_discord_markup(self):
         g = Game()
         for bad in ("@everyone", "<@&123>", "`code`", "**Bold**", "#channel"):

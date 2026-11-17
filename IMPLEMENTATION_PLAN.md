@@ -180,7 +180,7 @@ statecraft/
 - [ ] `can_move(from, to)`: the move is to an adjacent square (including diagonals), on the board, and unoccupied; living and dead states both block
 
 **1c. Game lifecycle**
-- [ ] `register(player_id, state_name)`: names must be unique (case-insensitive) and 1–40 characters; registration is only allowed during the registration phase
+- [ ] `register(player_id, state_name)`: names must be unique (case-insensitive) and 1–24 characters (sized to the board legend); registration is only allowed during the registration phase
 - [ ] `start(now)`: N = player count, random unique placement, assign markers, phase = active, day = 1. Every state starts with **0 AP**; the first AP arrives at the next 2 PM tick, whenever the game starts.
 - [ ] `end()` and `reset()`
 

@@ -56,6 +56,27 @@ class RenderTests(unittest.TestCase):
         g.state.players = {pid: Private(p) for pid, p in g.state.players.items()}
         self.png(render_image.render(g, focus="0", viewer="0"))
 
+    def test_worst_case_names_fit_legend_without_cutting(self):
+        from PIL import Image, ImageDraw
+        d = ImageDraw.Draw(Image.new("RGB", (10, 10)))
+        space = (820 - 48) // 2 - 36 * 1.6 - 20            # narrowest legend column
+        for name in ("W" * 24, "M" * 24, "WESTMARCH DOMINION OF WW", "The Republic of Westmarc"):
+            font = render_image._fit(d, name, space, 17, True)
+            self.assertLessEqual(d.textlength(name, font=font), space, name)
+            self.assertGreaterEqual(font.size, 12, f"{name} would be too small to read")
+
+    def test_extreme_board_renders(self):
+        g = Game(rng=random.Random(1))
+        for i in range(20):
+            g.register(f"Owner{i}", ("W" * 23 + chr(65 + i)), pid=str(i))
+        g.start()
+        alive = list(g.state.players)[:3]
+        for pid in list(g.state.players)[3:]:
+            p = g.get(pid)
+            p.alive, p.hp, p.eliminated_on_day = False, 0, 1
+        g.declare_winners(alive)
+        self.png(render_image.render(g, viewer=alive[0]))
+
     def test_colours_distinct(self):
         cols = [render_image.state_colour(i) for i in range(20)]
         self.assertEqual(len(set(cols)), 20)

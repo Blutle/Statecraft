@@ -65,7 +65,7 @@ Your state name is only ever typed in your **private console**, never in #regist
 | Command | Where | What it does |
 |---|---|---|
 | `/join` | #register | Creates your private console (a random name like `#console-7f3a`, visible only to you, the bot, and the admin), pins your control panel there, and gives you `@Statecraft-Players`. The reply is private. |
-| `/name name:<state name> [abbreviation:<ABC>]` | your console | Sets your state's name and its **3-letter abbreviation** (the board marker, letters only, unique; leave it out and one is made from the name), or changes them. You can rename any time before the game starts. Names must be unique, up to 40 characters, and can't contain @, #, <, >, backticks, asterisks, underscores, tildes, pipes, or backslashes. |
+| `/name name:<state name> [abbreviation:<ABC>]` | your console | Sets your state's name and its **3-letter abbreviation** (the board marker, letters only, unique; leave it out and one is made from the name), or changes them. You can rename any time before the game starts. Names must be unique, up to 24 characters, and can't contain @, #, <, >, backticks, asterisks, underscores, tildes, pipes, or backslashes. |
 | `/leave` | anywhere | (Yes/Cancel) Withdraws before the game starts, removes your role, and deletes your console. |
 
 `/admin start` refuses to start while anyone has joined but not named a state.

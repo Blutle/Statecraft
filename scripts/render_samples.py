@@ -33,7 +33,8 @@ def state_names(rng: random.Random, n: int) -> list[str]:
     while len(names) < n:
         pre, core = rng.choice(PREFIX), rng.choice(CORE)
         name = f"{pre} {core}".strip() if rng.random() < 0.7 else core
-        names.add(name[:40])
+        if len(name) <= 24:
+            names.add(name)
     return sorted(names)
 
 

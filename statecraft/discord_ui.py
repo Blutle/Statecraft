@@ -119,7 +119,7 @@ class ReplyButton(discord.ui.DynamicItem[discord.ui.Button], template=r"dmreply:
 
 
 class NameModal(discord.ui.Modal, title="Name your state"):
-    name = discord.ui.TextInput(label="State name (up to 40 characters)", max_length=40,
+    name = discord.ui.TextInput(label="State name (up to 24 characters)", max_length=24,
                                 placeholder="e.g. The Iron Dominion")
     abbreviation = discord.ui.TextInput(label="3-letter abbreviation (shown on the board)", min_length=3,
                                         max_length=3, required=False, placeholder="e.g. IRN (blank = automatic)")
