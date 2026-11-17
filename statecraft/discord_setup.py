@@ -52,17 +52,20 @@ BOT_PERMS = dict(view_channel=True, send_messages=True, embed_links=True, attach
                  use_external_apps=True, send_messages_in_threads=True, create_public_threads=True,
                  create_private_threads=True, add_reactions=True)
 # Players can't post in read-only channels, so no slash commands there either.
+# Reactions are off in every game channel: hovering a reaction shows the real
+# Discord name of whoever added it. Only #jury keeps them, since jurors have
+# already been revealed. Channels outside Statecraft are never touched.
 # "Use External Apps" is denied everywhere: an app a player installed on their
 # own account would post its response under their real Discord name.
 READ_ONLY = dict(view_channel=True, read_message_history=True, send_messages=False,
                  send_messages_in_threads=False, create_public_threads=False,
-                 create_private_threads=False, add_reactions=True,
+                 create_private_threads=False, add_reactions=False,
                  use_application_commands=False, use_external_apps=False)
 HIDDEN = dict(view_channel=False)
-MEMBER = dict(view_channel=True, read_message_history=True, send_messages=True, add_reactions=True,
+MEMBER = dict(view_channel=True, read_message_history=True, send_messages=True, add_reactions=False,
               use_external_apps=False)
 # Per-player overwrites on consoles and pact channel copies
-PLAYER_PRIVATE = dict(use_external_apps=False)
+PLAYER_PRIVATE = dict(use_external_apps=False, add_reactions=False)
 
 
 def _overwrites(guild: discord.Guild, access: str, roles: dict[str, discord.Role]) -> dict:
@@ -74,7 +77,7 @@ def _overwrites(guild: discord.Guild, access: str, roles: dict[str, discord.Role
         return {everyone: discord.PermissionOverwrite(**MEMBER, use_application_commands=True), **bot}
     if access == "jury":
         return {everyone: discord.PermissionOverwrite(**HIDDEN),
-                roles["jury"]: discord.PermissionOverwrite(**MEMBER), **bot}
+                roles["jury"]: discord.PermissionOverwrite(**{**MEMBER, "add_reactions": True}), **bot}
     if access == "hidden":
         return {everyone: discord.PermissionOverwrite(**HIDDEN), **bot}
     if access == "admin":

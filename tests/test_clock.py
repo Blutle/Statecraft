@@ -82,6 +82,22 @@ class ClockedActionTests(unittest.TestCase):
         self.assertTrue(self.g.upgrade("p1", now=ct(2026, 11, 17, 15, 15)).ok)
         self.assertTrue(self.g.attack("p2", "p1", now=ct(2026, 11, 17, 15, 1)).ok)  # per player
 
+    def test_admin_cooldown_applies_to_everyone_at_once(self):
+        self.assertTrue(self.g.attack("p1", "p2", now=ct(2026, 11, 17, 15, 0)).ok)
+        self.assertFalse(self.g.upgrade("p1", now=ct(2026, 11, 17, 15, 0, 40)).ok)
+        res = self.g.set_cooldown(30)
+        self.assertTrue(res.ok)
+        self.assertIn("30 seconds", res.message)
+        self.assertEqual(res.events[0].public, "The referee set the action cooldown to 30 seconds.")
+        self.assertEqual(self.g.records[-1]["action"], "admin_set_cooldown")
+        # the cooldown already running shrinks too
+        self.assertTrue(self.g.upgrade("p1", now=ct(2026, 11, 17, 15, 0, 40)).ok)
+        self.assertFalse(self.g.move("p1", "s", now=ct(2026, 11, 17, 15, 1, 9)).ok)
+        self.assertTrue(self.g.move("p1", "s", now=ct(2026, 11, 17, 15, 1, 10)).ok)
+        self.assertTrue(self.g.set_cooldown(900).ok)
+        self.assertEqual(schedule.fmt_cooldown(self.g.s["cooldown_minutes"]), "15 minutes")
+        self.assertFalse(self.g.set_cooldown(-1).ok)
+
     def test_rejected_action_does_not_start_cooldown(self):
         self.assertFalse(self.g.attack("p1", "p1", now=ct(2026, 11, 17, 15, 0)).ok)
         self.assertFalse(self.g.gift("p1", "p1", now=ct(2026, 11, 17, 15, 0)).ok)

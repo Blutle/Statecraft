@@ -798,6 +798,20 @@ class Game:
         p.ap += amount
         return self._done(Result(True, f"[Admin] {p.state_name} now has {p.ap} AP."))
 
+    @recorded("admin_set_cooldown")
+    def set_cooldown(self, seconds: int) -> Result:
+        """Change every State's action cooldown at once (e.g. 30 seconds for a
+        test). It takes effect immediately, including for cooldowns already
+        running, because cooldowns are measured from each State's last action."""
+        if not 0 <= seconds <= 24 * 3600:
+            return Result.fail("The cooldown must be between 0 seconds and 24 hours.")
+        old = schedule.fmt_cooldown(self.s["cooldown_minutes"])
+        self.s["cooldown_minutes"] = seconds / 60
+        new = schedule.fmt_cooldown(self.s["cooldown_minutes"])
+        return self._done(Result(True, f"[Admin] The cooldown is now **{new}** for every State (was {old}).", [
+            Event("SETTING", public=f"The referee set the action cooldown to {new}.",
+                  data={"setting": "cooldown", "seconds": seconds, "text": new})]))
+
     # -------------------------------------------------------------- messaging
     # Relays only: no AP, no cooldown, no game-state change. Their true author
     # is always written to the history, even for anonymous posts.

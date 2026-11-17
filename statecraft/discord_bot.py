@@ -186,7 +186,7 @@ class Router:
             overwrites={guild.default_role: discord.PermissionOverwrite(view_channel=False),
                         guild.me: discord.PermissionOverwrite(**discord_setup.BOT_PERMS),
                         member: discord.PermissionOverwrite(view_channel=True, send_messages=True,
-                                                            read_message_history=True, add_reactions=True,
+                                                            read_message_history=True,
                                                             attach_files=True, embed_links=True,
                                                             **discord_setup.PLAYER_PRIVATE)},
             reason="Statecraft pact")
@@ -634,7 +634,7 @@ def register_commands(bot: StatecraftBot) -> None:
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
             guild.me: discord.PermissionOverwrite(**discord_setup.BOT_PERMS),
             member: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True,
-                                                use_application_commands=True, add_reactions=True,
+                                                use_application_commands=True,
                                                 send_messages_in_threads=True, **discord_setup.PLAYER_PRIVATE),
         }
         return await guild.create_text_channel(f"console-{secrets.token_hex(2)}", category=cat,
@@ -1001,6 +1001,13 @@ def register_commands(bot: StatecraftBot) -> None:
         tid, err = ui.resolve(state, admin=True)
         await ui.reply(i, await svc.run(lambda g, now: g.give_ap(tid, amount)) if tid else Result.fail(err),
                        ephemeral=True)
+
+    @admin.command(description="Set everyone's action cooldown, in seconds (the normal game uses 900 = 15 minutes)")
+    @app_commands.describe(seconds="e.g. 30 for a quick test; 900 puts the normal 15 minutes back")
+    async def cooldown(i: discord.Interaction, seconds: app_commands.Range[int, 0, 86400]):
+        if not await admin_only(i):
+            return
+        await ui.reply(i, await svc.run(lambda g, now: g.set_cooldown(seconds)), ephemeral=True)
 
     @admin.command(description="Edit any stored value of a State: name, abbreviation, AP, HP, Influence, position...")
     @app_commands.autocomplete(state=any_states)

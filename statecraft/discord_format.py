@@ -218,6 +218,8 @@ def action_card(ev, game: Game, now: datetime | None = None) -> discord.Embed:
             emb.description = f"🏆 **The game is over.** Declared {'winner' if len(win) == 1 else 'joint winners'}:\n{names}"
     elif k == "ADMIN_EDIT":
         emb.description = f"🛠️ Referee adjustment: {ev.public.split(': ', 1)[-1]}"
+    elif k == "SETTING":
+        emb.description = f"⏱️ The referee set the action cooldown to **{d['text']}**"
     elif k == "REVIVED":
         emb.description = f"✨ {tag(d['pid'])} has been restored by the referee"
     else:

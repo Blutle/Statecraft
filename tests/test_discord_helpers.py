@@ -160,5 +160,14 @@ class GuideCardDiffTests(unittest.TestCase):
         self.assertFalse(_same_card(SimpleNamespace(embeds=[live]), edited))
 
 
+class ReactionPermissionTests(unittest.TestCase):
+    def test_reactions_off_outside_the_jury(self):
+        from statecraft import discord_setup as ds
+        self.assertFalse(ds.READ_ONLY["add_reactions"])
+        self.assertFalse(ds.MEMBER["add_reactions"])
+        self.assertFalse(ds.PLAYER_PRIVATE["add_reactions"])
+        self.assertTrue(ds.BOT_PERMS["add_reactions"])     # the bot must hold what it sets
+
+
 if __name__ == "__main__":
     unittest.main()

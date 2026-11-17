@@ -10,6 +10,8 @@ card's footer, the only text Discord places below a picture). Game terms: State 
 
 from __future__ import annotations
 
+from . import schedule
+
 
 def _t(hhmm: str) -> str:
     h, m = (int(x) for x in hhmm.split(":"))
@@ -45,7 +47,7 @@ def rules(s: dict) -> list[tuple[str, str]]:
 
         ("🎯 Actions",
          f"Actions can only be taken **{open_}–{close} {tz}**. After **any** action you must wait "
-         f"**{s['cooldown_minutes']} minutes** before your next one. All actions are **public**, with the "
+         f"**{schedule.fmt_cooldown(s['cooldown_minutes'])}** before your next one. All actions are **public**, with the "
          f"exception of **Gifting**, which is **private**.\n\n"
          f"**Move**: {s['move_cost']} AP. One square in any of the 8 directions. You can't move off the board or "
          "onto another State, living or destroyed.\n"

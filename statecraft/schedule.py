@@ -87,6 +87,14 @@ def fmt(when: datetime, s: dict) -> str:
     return loc.strftime("%a ") + loc.strftime("%I:%M %p").lstrip("0")
 
 
+def fmt_cooldown(minutes: float) -> str:
+    """The cooldown setting in words: '15 minutes', '30 seconds', '1 minute 30 seconds'."""
+    m, sec = divmod(round(minutes * 60), 60)
+    parts = ([f"{m} minute{'s' if m != 1 else ''}"] if m else []) + ([f"{sec} second{'s' if sec != 1 else ''}"]
+                                                                     if sec or not m else [])
+    return " ".join(parts)
+
+
 def fmt_duration(td: timedelta) -> str:
     secs = max(0, int(td.total_seconds()))
     m, sec = divmod(secs, 60)
