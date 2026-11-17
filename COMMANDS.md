@@ -158,7 +158,8 @@ Jury discussion happens in #jury. It's normal chat, not a command.
 
 | Command | What it does |
 |---|---|
-| `/admin setup` | Creates or repairs roles, channels, permissions, and the webhook. Safe to run any time. |
+| `/admin setup` | Creates or repairs roles, channels, permissions, and the webhook, and posts or updates the guides. Safe to run any time. |
+| `/admin guides` | Posts or updates the **#rules** (the game) and **#how-to-play** (using the bot) guides. They're written in `statecraft/guides.py`, and their numbers (times, costs, cooldown, limits) come from the game settings. Re-run it after editing either. |
 | `/admin open` | Opens registration for a new game (enables `/join`). |
 | `/admin start` | Closes registration, places the states (needs 12+ players), posts the board, and announces the state names without owners. The first AP arrives at the next 2:00 PM. |
 | `/admin status` | Full view: phase, day, and every state with its owner, AP, HP, position, and cooldown. Also shows tonight's ballots and anyone with info access. |
@@ -170,7 +171,7 @@ Jury discussion happens in #jury. It's normal chat, not a command.
 | `/admin juryscore` | After the game: ranks jurors by votes for the winner(s), with ballots, nights, and rate. |
 | `/admin reload` | Reloads `game.json` after you edit it by hand. |
 | `/admin reset [fresh_channels:<true>]` | (Yes/Cancel) Wipes the game for a fresh one. The old history log is kept under a timestamped name. |
-| `/admin cleanup [fresh_channels:<true>]` | (Yes/Cancel) After a game: deletes every console (and the conversation threads inside them) and every pact channel (and the extra pact categories), and removes game roles. `game.json` and the history log are kept. By default the public channels keep their messages. With `fresh_channels: True` (also available on `/admin reset`), #register, #how-to-play, #game-board, #action-log, #public-chat, #anonymous-chat, and #jury are deleted and recreated empty with the same permissions. #statecraft-admin is kept. |
+| `/admin cleanup [fresh_channels:<true>]` | (Yes/Cancel) After a game: deletes every console (and the conversation threads inside them) and every pact channel (and the extra pact categories), and removes game roles. `game.json` and the history log are kept. By default the public channels keep their messages. With `fresh_channels: True` (also available on `/admin reset`), #register, #game-board, #action-log, #public-chat, #anonymous-chat, and #jury are deleted and recreated empty with the same permissions. **#rules, #how-to-play, and #statecraft-admin are kept.** |
 
 ## Test mode (`TEST_MODE=1` in `.env` only, admins only)
 
