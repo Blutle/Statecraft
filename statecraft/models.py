@@ -44,6 +44,7 @@ class Player:
     range_upgrades: int = 0
     alive: bool = True
     eliminated_on_day: int | None = None
+    color: str | None = None         # palette name (statecraft/colours.py), chosen or assigned at start
     last_action: str | None = None   # ISO time of last gameplay action (cooldown)
 
 

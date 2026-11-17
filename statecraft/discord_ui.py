@@ -15,12 +15,13 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import io
 import logging
 from typing import TYPE_CHECKING, Awaitable, Callable
 
 import discord
 
-from . import geometry
+from . import geometry, render_image
 from .discord_format import ARROWS, DIRECTION_NAMES, HELP, NO_PINGS, board_message, own_status, panel_embed
 from .game import Game
 from .models import Result
@@ -295,6 +296,41 @@ class PactMenuView(discord.ui.View):
                                                       chose_pact))
 
 
+# -------------------------------------------------------------------- colors
+
+class ColorView(discord.ui.View):
+    """Menu of the colors still free (first come, first served)."""
+
+    def __init__(self, ui: "UI", pid: str):
+        super().__init__(timeout=180)
+        g = ui.svc.game
+        mine = g.get(pid).color
+        options = [discord.SelectOption(label=c, value=c, default=(c == mine)) for c in g.free_colors(pid)]
+        select = discord.ui.Select(placeholder="Choose your State's color…", options=options[:25])
+
+        async def picked(i: discord.Interaction):
+            choice = select.values[0]
+            res = await ui.svc.run(lambda g, now: g.set_color(pid, choice))
+            await ui.reply(i, res, edit=True)
+
+        select.callback = picked
+        self.add_item(select)
+
+
+async def send_color_picker(ui: "UI", i: discord.Interaction, pid: str) -> None:
+    g = ui.svc.game
+    if g.state.phase != "registration":
+        await i.response.send_message("Colors are locked once the game has started.", ephemeral=True)
+        return
+    me = g.get(pid)
+    taken = {p.color for p in g.state.players.values() if p.color}
+    png = await asyncio.to_thread(render_image.palette_png, taken, me.color)
+    await i.response.send_message(
+        "Pick a color for your State. It's first come, first served; dimmed colors are taken. You can change it "
+        "until the game starts.", file=discord.File(io.BytesIO(png), filename="colors.png"),
+        view=ColorView(ui, pid), ephemeral=True)
+
+
 # --------------------------------------------------------------------- board
 
 class BoardRangeSelect(discord.ui.DynamicItem[discord.ui.Select], template=r"board:range"):
@@ -555,6 +591,7 @@ class UI:
         if p is None or phase == "registration":
             view.add_item(PanelButton("name", "Rename my state" if p else "Name my state", B.primary, 0, "✏️"))
             if p:
+                view.add_item(PanelButton("color", "Pick a color", B.secondary, 0, "🎨"))
                 view.add_item(PanelButton("pacts", "Pacts", B.secondary, 0, "🤝"))
             view.add_item(PanelButton("help", "Help", B.secondary, 0))
             return view
@@ -676,6 +713,8 @@ class UI:
             await self.send_board(i, focus=pid)
         elif what in ("say", "anon"):
             await i.response.send_modal(ChatModal(self, what))
+        elif what == "color":
+            await send_color_picker(self, i, pid)
         elif what == "pacts":
             await i.response.send_message(pact_summary(g, pid), view=PactMenuView(self, pid), ephemeral=True,
                                           allowed_mentions=NO_PINGS)

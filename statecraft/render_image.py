@@ -18,7 +18,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-from . import geometry
+from . import colours, geometry
 from .game import Game
 
 # Discord-dark palette
@@ -65,6 +65,11 @@ def state_colour(index: int) -> tuple[int, int, int]:
     return int(r * 255), int(g * 255), int(b * 255)
 
 
+def colour_of(p, index: int) -> tuple[int, int, int]:
+    """A State's chosen palette color (fallback for old saves: a generated one)."""
+    return colours.PALETTE.get(p.color or "", state_colour(index))
+
+
 def _ink(fill: tuple[int, int, int]) -> tuple[int, int, int]:
     """Black or white text, whichever reads better on `fill`."""
     r, g, b = fill
@@ -99,11 +104,40 @@ def _pips(draw, cx, y, hp, max_hp, size, fill_on, fill_off):
         x += size + gap
 
 
+def palette_png(taken: set[str], mine: str | None = None) -> bytes:
+    """The color palette as a picture: free colors bright, taken ones dimmed
+    (without saying who holds them), the viewer's own color outlined."""
+    cols, cw, ch, pad = 4, 200, 64, 16
+    names = list(colours.PALETTE)
+    rows = -(-len(names) // cols)
+    img = Image.new("RGB", (pad * 2 + cols * cw, pad * 2 + rows * ch + 30), BG)
+    d = ImageDraw.Draw(img)
+    d.text((pad, pad - 4), "State colors · dimmed = taken", font=_font(16, True), fill=MUTED)
+    for k, name in enumerate(names):
+        r, c = divmod(k, cols)
+        x0, y0 = pad + c * cw, pad + 26 + r * ch
+        box = (x0 + 4, y0 + 4, x0 + cw - 8, y0 + ch - 8)
+        fill = colours.PALETTE[name]
+        if name in taken and name != mine:
+            fill = tuple(int(v * 0.30 + b * 0.70) for v, b in zip(fill, BG))
+            d.rounded_rectangle(box, 10, fill=fill)
+            _centered(d, ((box[0] + box[2]) / 2, (box[1] + box[3]) / 2), f"{name} · taken", _font(16, True), MUTED)
+            continue
+        d.rounded_rectangle(box, 10, fill=fill)
+        if name == mine:
+            d.rounded_rectangle((box[0] - 3, box[1] - 3, box[2] + 3, box[3] + 3), 12, outline=YOU, width=3)
+        label = f"{name} · yours" if name == mine else name
+        _centered(d, ((box[0] + box[2]) / 2, (box[1] + box[3]) / 2), label, _font(18, True), _ink(fill))
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", optimize=True)
+    return buf.getvalue()
+
+
 def render(game: Game, focus: str | None = None, viewer: str | None = None) -> bytes:
     st = game.state
     n = st.board_size
     players = list(st.players.values())
-    colours = {p.id: state_colour(i) for i, p in enumerate(players)}
+    colours = {p.id: colour_of(p, i) for i, p in enumerate(players)}
     focus_p = game.get(focus) if focus else None
     viewer_p = game.get(viewer) if viewer else None
     max_hp = game.s["starting_hp"]

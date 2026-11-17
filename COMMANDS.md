@@ -48,6 +48,7 @@ Every console has a **control panel** that always sits at the **bottom** of the 
 
 | Panel control | What it does |
 |---|---|
+| **🎨 Pick a color** (before the game, once named) | Shows a picture of the 20-color palette (taken colors dimmed, without saying who has them) and a menu of the free ones. **First come, first served, no duplicates.** You can change it until the start. Anyone who never picks gets the first free color when the game starts. |
 | **Name my state / Rename my state** (before the game) | Opens a box for your state name and 3-letter abbreviation. When renaming, it starts filled in with your current values. |
 | **Choose an action…** menu (living states) | **Move** opens a 3×3 arrow grid, with blocked and off-board squares greyed out. **Attack** and **Gift** list only the states within your Influence. **Upgrade Influence** and **Spy** go straight to confirmation. Every choice ends in **Yes / Cancel**. |
 | **Choose an action…** menu (jurors) | **Vote** lists the surviving states. |
@@ -66,6 +67,7 @@ Your state name is only ever typed in your **private console**, never in #regist
 |---|---|---|
 | `/join` | #register | Creates your private console (a random name like `#console-7f3a`, visible only to you, the bot, and the admin), pins your control panel there, and gives you `@Statecraft-Players`. The reply is private. |
 | `/name name:<state name> [abbreviation:<ABC>]` | your console | Sets your state's name and its **3-letter abbreviation** (the board marker, letters only, unique; leave it out and one is made from the name), or changes them. You can rename any time before the game starts. Names must be unique, up to 24 characters, and can't contain @, #, <, >, backticks, asterisks, underscores, tildes, pipes, or backslashes. |
+| `/color [color:<name>]` | your console | Picks your State's color: one of 20 named colors (Crimson, Coral, Orange, Amber, Lemon, Lime, Green, Olive, Mint, Teal, Cyan, Sky, Blue, Violet, Magenta, Pink, Maroon, Brown, Tan, Silver). Without a color, it opens the palette picker. First come, first served, and changeable until the game starts. |
 | `/leave` | anywhere | (Yes/Cancel) Withdraws before the game starts, removes your role, and deletes your console. |
 
 `/admin start` refuses to start while anyone has joined but not named a state.

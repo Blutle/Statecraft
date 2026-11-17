@@ -116,8 +116,10 @@ def how_to_play(s: dict) -> list[tuple[str, str]]:
         ("1️⃣ Joining",
          "• In **#register**, type `/join`. You'll get a private console channel.\n"
          "• In your console, tap **✏️ Name my state** and pick a name (up to 24 characters) and a 3-letter "
-         "**abbreviation** for the map (or leave it blank and one is made for you). You can change both until the "
-         "game starts.\n"
+         "**abbreviation** for the map (or leave it blank and one is made for you).\n"
+         "• Tap **🎨 Pick a color** to choose your State's color on the map. It's **first come, first served**, "
+         "so no two States share a color. If you don't pick one, you'll get a free color when the game starts.\n"
+         "• You can change your name, abbreviation, and color until the game starts.\n"
          "• Changed your mind? `/leave` before the game starts."),
 
         ("🎛️ Your control panel",

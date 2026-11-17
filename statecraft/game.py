@@ -18,7 +18,7 @@ from dataclasses import asdict
 from datetime import datetime, timedelta
 from typing import Callable
 
-from . import geometry, schedule
+from . import colours, geometry, schedule
 from .models import Event, GameState, Player, Result
 
 STOPWORDS = {"the", "of", "and", "a", "an", "de", "la", "le", "du", "von", "van"}
@@ -242,6 +242,38 @@ class Game:
         colors = [[(x, y) for x, y in squares if (x + y) % 2 == c] for c in (0, 1)]
         return self.rng.sample(max(colors, key=len), n)
 
+    def _assign_colors(self) -> None:
+        """Anyone who didn't pick a color gets the first free one."""
+        taken = {p.color for p in self.state.players.values() if p.color}
+        free = [c for c in colours.PALETTE if c not in taken]
+        for p in self.state.players.values():
+            if not p.color and free:
+                p.color = free.pop(0)
+
+    def free_colors(self, for_pid: str | None = None) -> list[str]:
+        """Palette colors nobody else holds (in palette order)."""
+        taken = {p.color for p in self.state.players.values() if p.color and p.id != for_pid}
+        return [c for c in colours.PALETTE if c not in taken]
+
+    @recorded("color")
+    def set_color(self, pid: str, color: str) -> Result:
+        """Pick a State color before the game starts: first come, first served."""
+        p = self.get(pid)
+        if not p:
+            return Result.fail("Name your State first.")
+        if self.state.phase != "registration":
+            return Result.fail("Colors are locked once the game has started.")
+        name = colours.canonical(color)
+        if not name:
+            return Result.fail("That isn't one of the colors. Choose from: " + ", ".join(colours.PALETTE))
+        holder = next((q for q in self.state.players.values() if q.color == name and q is not p), None)
+        if holder:
+            return Result.fail(f"{name} is already taken. Pick another color.")
+        if p.color == name:
+            return Result.fail(f"Your color is already {name}.")
+        p.color = name
+        return Result(True, f"Your State's color is now **{name}**.", data_event("COLOR", pid=pid))
+
     @recorded("start")
     def start(self, force: bool = False, *, now: datetime | None = None) -> Result:
         """Begin the game. Needs min_players (12); force allows down to 2 for testing."""
@@ -261,6 +293,7 @@ class Game:
             p.x, p.y = x, y
             p.hp = self.s["starting_hp"]
             p.ap = 0
+        self._assign_colors()
         self.state.phase = "active"
         self.state.day = 0
         if now is not None:
@@ -623,16 +656,16 @@ class Game:
     # Referee edits: every stored attribute of a state.
     ADMIN_FIELDS = {
         "name": "name", "abbreviation": "abbreviation", "ap": "AP", "hp": "HP", "range": "Influence",
-        "position": "position", "cooldown": "cooldown", "owner": "owner name",
+        "position": "position", "cooldown": "cooldown", "owner": "owner name", "color": "color",
     }
-    PUBLIC_FIELDS = {"name", "abbreviation", "hp", "range", "position"}
+    PUBLIC_FIELDS = {"name", "abbreviation", "hp", "range", "position", "color"}
 
     def admin_value(self, p: Player, field: str) -> str:
         """Current value of an editable field, as text."""
         return {
             "name": p.state_name, "abbreviation": p.marker, "ap": str(p.ap), "hp": str(p.hp),
             "range": str(self.range_of(p)), "position": self.pos(p), "owner": p.owner_name,
-            "cooldown": "active" if p.last_action else "ready",
+            "cooldown": "active" if p.last_action else "ready", "color": p.color or "none",
         }[field]
 
     def _name_problem(self, name: str, exclude: Player) -> str:
@@ -705,6 +738,13 @@ class Game:
             if value.lower() not in ("reset", "ready", "0", "clear"):
                 return Result.fail("Cooldown can only be reset: use the value 'reset'.")
             p.last_action = None
+        elif field == "color":
+            name = colours.canonical(value)
+            if not name:
+                return Result.fail("Color must be one of: " + ", ".join(colours.PALETTE))
+            if any(q is not p and q.color == name for q in self.state.players.values()):
+                return Result.fail(f"{name} is already taken.")
+            p.color = name
         elif field == "owner":
             if not value:
                 return Result.fail("The owner name can't be empty.")
@@ -966,7 +1006,7 @@ class Game:
         if not p:
             return None
         return {
-            "id": p.id, "state": p.state_name, "owner": p.owner_name, "marker": p.marker,
+            "id": p.id, "state": p.state_name, "owner": p.owner_name, "marker": p.marker, "color": p.color,
             "pos": self.pos(p), "hp": p.hp, "ap": p.ap, "range": self.range_of(p), "alive": p.alive,
         }
 

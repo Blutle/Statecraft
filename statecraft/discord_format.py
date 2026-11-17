@@ -11,14 +11,14 @@ from datetime import datetime
 
 import discord
 
-from . import geometry, render_image, render_text, schedule
+from . import colours, geometry, render_image, render_text, schedule
 from .game import Game
 from .models import Result
 
 NO_PINGS = discord.AllowedMentions.none()
 
 HELP = """**Statecraft**: use the **control panel** at the bottom of your console. Conversations with other states open as private threads (✉️ Message a state). Every slash command below also works as a backup.
-**Before the game**: `/name` sets or changes your state's name · `/leave` withdraws
+**Before the game**: `/name` sets or changes your State's name · `/color` picks its color · `/leave` withdraws
 **Actions** (2:00-8:00 PM Central, 15-minute cooldown after each, always confirmed first):
 Move 1 AP · Attack 1 AP · Upgrade Influence 2 AP (+1) · Gift 1 AP (give it to a State within your Influence) · Spy 1 AP (today's Gift log until 8:15 PM)
 **Info** (free, any time): `/status` (you, or any State) · `/board` · `/spylog` · `/help` · `/panel` (re-post your panel)
@@ -117,8 +117,12 @@ def _panel_card(game: Game, pid: str, now: datetime) -> discord.Embed:
                              colour=discord.Colour.light_grey())
     emb = discord.Embed(title=f"{p.state_name} [{p.marker}]", colour=discord.Colour.dark_teal())
     if phase == "registration":
-        emb.description = ("You're registered. The game hasn't started yet, so you can still rename your state.\n"
+        colour = f"**{p.color}**" if p.color else "not chosen yet (tap **🎨 Pick a color**)"
+        emb.description = ("You're registered. Until the game starts you can still rename your State or change "
+                           f"its color.\nColor: {colour}\n"
                            "Your first AP arrives at the first 2:00 PM after the game starts.")
+        if p.color:
+            emb.colour = discord.Colour.from_rgb(*colours.PALETTE[p.color])
         return emb
     if phase == "ended":
         won = pid in game.winners()

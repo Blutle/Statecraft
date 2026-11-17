@@ -21,12 +21,12 @@ import discord
 from discord import app_commands
 from discord.ext import tasks
 
-from . import config, discord_setup, geometry, guides, schedule
+from . import colours, config, discord_setup, geometry, guides, schedule
 from .discord_format import (HELP, NO_PINGS, action_card, board_message, history_line, own_status, parse_duration, public_status,
                              run_text)
 from .discord_service import GameService
 from .discord_ui import (UI, BoardRangeSelect, PactInviteButton, PanelButton, PanelSelect, ReplyButton, board_view,
-                         pact_summary)
+                         pact_summary, send_color_picker)
 from .models import Event, Result
 
 log = logging.getLogger("statecraft")
@@ -566,6 +566,16 @@ def register_commands(bot: StatecraftBot) -> None:
             await ui.reply(i, await svc.run(lambda g, now: g.register(i.user.display_name, name, pid=pid,
                                                                       abbreviation=abbreviation)))
 
+    @tree.command(description="Pick your State's color before the game starts (first come, first served)")
+    @app_commands.choices(color=[app_commands.Choice(name=c, value=c) for c in colours.PALETTE])
+    async def color(i: discord.Interaction, color: app_commands.Choice[str] | None = None):
+        if not (pid := await ui.console_pid(i)):
+            return
+        if color is None:
+            await send_color_picker(ui, i, pid)
+            return
+        await ui.reply(i, await svc.run(lambda g, now: g.set_color(pid, color.value)))
+
     @tree.command(description="Re-post your control panel at the bottom of your console")
     async def panel(i: discord.Interaction):
         if pid := await ui.console_pid(i, need_state=False):
@@ -900,7 +910,7 @@ def register_commands(bot: StatecraftBot) -> None:
     @app_commands.choices(field=[app_commands.Choice(name=n, value=v) for n, v in [
         ("Name", "name"), ("Abbreviation", "abbreviation"), ("AP", "ap"), ("HP (0 destroys, >0 revives)", "hp"),
         ("Influence", "range"), ("Position (square like C5)", "position"), ("Cooldown (value: reset)", "cooldown"),
-        ("Owner name (revealed on elimination)", "owner")]])
+        ("Owner name (revealed on elimination)", "owner"), ("Color (palette name)", "color")]])
     @app_commands.describe(value="New value: text, a number, a square like C5, or 'reset' for cooldown",
                            announce="Post changes to public stats in #action-log (default: yes)")
     async def edit(i: discord.Interaction, state: str, field: app_commands.Choice[str], value: str,
