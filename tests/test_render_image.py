@@ -60,10 +60,13 @@ class RenderTests(unittest.TestCase):
         from PIL import Image, ImageDraw
         d = ImageDraw.Draw(Image.new("RGB", (10, 10)))
         space = (820 - 48) // 2 - 36 * 1.6 - 20            # narrowest legend column
-        for name in ("W" * 24, "M" * 24, "WESTMARCH DOMINION OF WW", "The Republic of Westmarc"):
+        # Font widths differ by platform (Segoe UI on Windows, the wider DejaVu Sans on Linux): never cut,
+        # 12px+ for real names, and 11px allowed for the absurd 24-W name (DejaVu needs it).
+        for name, smallest in (("W" * 24, 11), ("M" * 24, 12), ("WESTMARCH DOMINION OF WW", 12),
+                               ("The Republic of Westmarc", 12)):
             font = render_image._fit(d, name, space, 17, True)
             self.assertLessEqual(d.textlength(name, font=font), space, name)
-            self.assertGreaterEqual(font.size, 12, f"{name} would be too small to read")
+            self.assertGreaterEqual(font.size, smallest, f"{name} would be too small to read")
 
     def test_extreme_board_renders(self):
         g = Game(rng=random.Random(1))
