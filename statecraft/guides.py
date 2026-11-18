@@ -68,7 +68,7 @@ def rules(s: dict) -> list[tuple[str, str]]:
          "• Its controller is **revealed** to everyone.\n"
          "• They join the **Jury**.\n"
          "• They **lose private correspondence**: they're removed from every pact and can no longer send or "
-         "receive private messages. They can still post in public chat (marked **(destroyed)**), anonymous "
+         "receive private messages. They can still post in public chat, anonymous "
          "chat, and the Jury chat.\n"
          "• The State stays on the map as a permanent **obstacle**."),
 
