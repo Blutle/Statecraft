@@ -138,7 +138,8 @@ def how_to_play(s: dict) -> list[tuple[str, str]]:
     return [
         ("👋 How to play on Discord",
          "Everything happens in your **private console**, a channel only you (and the referee) can see, near the "
-         "top of the channel list under **Your State**. Your pact channels appear there too. Nobody "
+         "top of the channel list in your own category: **Your State** until the game starts, then your State's "
+         "name. Your pact channels appear there too. Nobody "
          "else can tell which console, or which State, is yours.\n\n"
          "This guide covers using the bot. For the game itself, read the rules channel."),
 

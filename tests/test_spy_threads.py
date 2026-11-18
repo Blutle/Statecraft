@@ -125,46 +125,58 @@ class JurorDMThreadTests(unittest.TestCase):
         self.assertEqual(other.sent, [])                               # unrelated conversations untouched
 
 
-class YourStateCategoryTests(unittest.TestCase):
-    """Consoles and pact copies share "Your State"; a full category overflows into another."""
+class PlayerCategoryTests(unittest.TestCase):
+    """Each player gets their own category: "Your State" until the start, then the State's name."""
 
-    def test_pacts_sit_with_the_console_and_overflow_when_full(self):
+    def test_own_category_named_at_the_start(self):
+        import discord
+
         class Cat:
-            def __init__(self, cid, n, position=0):
-                self.id, self.channels, self.position = cid, [object()] * n, position
+            def __init__(self, cid, name, overwrites):
+                self.id, self.name, self.overwrites, self.channels, self.moved = cid, name, overwrites, [], None
+
+            async def move(self, after=None, reason=None):
+                self.moved = after
+
+            async def edit(self, name=None, reason=None):
+                self.name = name
 
         class Guild:
             me, default_role = object(), object()
 
             def __init__(self):
-                self.chans = {}
+                self.chans = {7: SimpleNamespace(id=7)}       # the Info category
 
             def get_channel(self, cid):
                 return self.chans.get(cid)
 
-            async def create_category(self, name, overwrites=None, position=None, reason=None):
-                cat = Cat(70 + len(self.chans), 0, position)
-                cat.name = name
+            def get_member(self, uid):
+                return None
+
+            async def create_category(self, name, overwrites=None, reason=None):
+                cat = Cat(70 + len(self.chans), name, overwrites)
                 self.chans[cat.id] = cat
                 return cat
 
         guild = Guild()
-        main = Cat(1, 49)
-        guild.chans[1] = main
-        console = SimpleNamespace(category=main)
-        guild.chans[500] = console
-        server = {"console_category_id": 1, "consoles": {"100": 500}}
-        svc = SimpleNamespace(server=server, save_server=lambda: None, console_of=lambda pid: server["consoles"].get(pid))
-        router = Router(SimpleNamespace(svc=svc))
-        run = lambda pid=None: asyncio.run(router.state_category(guild, pid))
-
-        self.assertIs(run("100"), main)                 # room next to the console
-        main.channels.append(object())                  # now 50: full
-        extra = run("100")
-        self.assertIsNot(extra, main)
-        self.assertEqual(extra.name, "Your State")
-        self.assertEqual(server["state_categories"], [extra.id])
-        self.assertIs(run(), extra)                     # reused, not created again
+        g = Game(rng=random.Random(2))
+        for n, name in enumerate(["Westhaven", "Veyran Empire"]):
+            g.register(f"U{n}", name, pid=str(100 + n))
+        server = {"info_category_id": 7}
+        svc = SimpleNamespace(game=g, server=server, save_server=lambda: None, cfg=SimpleNamespace(guild_id=1))
+        router = Router(SimpleNamespace(svc=svc, get_guild=lambda gid: guild))
+        mine = asyncio.run(router.player_category(guild, "100"))
+        theirs = asyncio.run(router.player_category(guild, "101"))
+        self.assertIsNot(mine, theirs)                                    # one each
+        self.assertIs(asyncio.run(router.player_category(guild, "100")), mine)   # reused
+        self.assertEqual(mine.name, "Your State")                         # during registration
+        self.assertIs(mine.moved, guild.chans[7])                         # placed right below Info
+        members = [t for t in mine.overwrites if isinstance(t, discord.Object)]
+        self.assertEqual([t.id for t in members], [100])                  # only its owner can see it
+        self.assertFalse(mine.overwrites[guild.default_role].view_channel)
+        g.start(force=True)
+        asyncio.run(router.rename_player_categories())
+        self.assertEqual((mine.name, theirs.name), ("Westhaven", "Veyran Empire"))
 
 
 if __name__ == "__main__":

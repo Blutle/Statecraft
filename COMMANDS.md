@@ -175,7 +175,7 @@ Jury discussion happens in #jury. It's normal chat, not a command.
 
 | Command | What it does |
 |---|---|
-| `/admin setup` | Creates or repairs roles, channels, permissions, and the webhook, and posts or updates the guides. Safe to run any time. Channel layout, top to bottom: **Info** (#rules, #how-to-play, #register, which players can collapse or mute once they've read them), **Your State** (consoles and pacts), and **Statecraft** (the gameplay channels). |
+| `/admin setup` | Creates or repairs roles, channels, permissions, and the webhook, and posts or updates the guides. Safe to run any time. Channel layout, top to bottom: **Info** (#rules, #how-to-play, #register, which players can collapse or mute once they've read them), each player's **own category** (their console and pacts), and **Statecraft** (the gameplay channels). It also moves consoles and pacts from the older shared "Your State" layout into players' own categories. |
 | `/admin guides` | Posts or updates the **#rules** (the game) and **#how-to-play** (using the bot) guides, plus the **pinned welcome card in #register** (type `/join`, links to the two guides). `/admin setup` and fresh-channel wipes post them too. They're written in `statecraft/guides.py`, and their numbers (times, costs, cooldown, limits) come from the game settings. Re-run it after editing either. |
 | `/admin open` | Opens registration for a new game (enables `/join`). |
 | `/admin start` | Closes registration, places the states (needs 12+ players), posts the board, and announces the state names without owners. The first AP arrives at the next 2:00 PM. |
@@ -244,7 +244,7 @@ A Pillow image is static, and Discord can't do mouse-over on images. So Influenc
 ## Discord requirements this design adds
 
 - **Message Content intent:** enabled (2026-11-17). Pact channels relay plain typed messages, so the bot reads them.
-- **Channel limits:** Discord allows 500 channels per server and 50 per category. Consoles and pact copies share the **"Your State"** category, just below **Info** at the top of the channel list, so each player sees their console with their own pacts right below it. When a category fills up, the bot adds another "Your State" category; a player's pacts go next to their console when there's room, and each player only sees the categories holding their own channels. With 16 players and the membership cap of 6, there are at most 96 pact channels.
+- **Your own category:** each player's console and pact channels sit in a category only they (and the referee) can see. It's called **"Your State"** during registration and renamed to the State's name when the game starts (once, since Discord allows only about 2 renames per channel every 10 minutes; a referee rename with `/admin edit` renames it too). Categories have no member list, so it reveals nothing. **Channel limits:** Discord allows 500 channels per server and 50 per category. A player has a console plus at most 6 pacts, so with 16 players that's 16 categories and at most 112 channels.
 
 ## Open questions
 

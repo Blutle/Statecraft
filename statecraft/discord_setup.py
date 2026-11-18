@@ -15,7 +15,7 @@ import discord
 
 CATEGORY = "Statecraft"                # gameplay channels
 INFO_CATEGORY = "Info"                 # rules, how-to-play, register: at the top; players can collapse it
-CONSOLE_CATEGORY = "Your State"        # consoles and pact copies; right below Info
+CONSOLE_CATEGORY = "Your State"        # a player's own category until the game starts (then the State's name)
 INFO_CHANNELS = {"rules", "how_to_play", "register"}
 
 ROLES = {
@@ -157,11 +157,8 @@ async def ensure_server(guild: discord.Guild, path: Path, echo=None) -> list[str
 
     category = await ensure_category("category_id", CATEGORY, "readonly")
     info = await ensure_category("info_category_id", INFO_CATEGORY, "readonly")
-    consoles = await ensure_category("console_category_id", CONSOLE_CATEGORY, "hidden")
-    try:                                   # Info, then "Your State", then the game
-        await info.edit(position=0, reason="Statecraft setup")
-        await consoles.edit(position=1, reason="Statecraft setup")
-        await category.edit(position=2, reason="Statecraft setup")
+    try:                                   # Info at the top; players' own categories are added right below it
+        await info.move(beginning=True, reason="Statecraft setup")
     except discord.HTTPException:
         pass
 
@@ -219,7 +216,8 @@ async def ensure_server(guild: discord.Guild, path: Path, echo=None) -> list[str
     # Existing consoles and pact copies: bring each player's overwrite up to date
     # (no external apps, reactions, files, or embeds)
     patched = 0
-    for cid in [data.get("console_category_id")] + saved.get("state_categories", []) + saved.get("pact_categories", []):
+    for cid in ([saved.get("console_category_id")] + saved.get("state_categories", []) + saved.get("pact_categories", [])
+                + list(saved.get("player_categories", {}).values())):
         cat = guild.get_channel(cid or 0)
         for ch in (cat.channels if cat else []):
             for target, ow in ch.overwrites.items():

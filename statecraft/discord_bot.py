@@ -137,6 +137,9 @@ class Router:
             await self.revoke_role(ev.data["pid"], "jury")
         if ev.kind == "ADMIN_EDIT" and ev.data["field"] == "name":
             await self.rename_dm_threads(ev.data["pid"])
+            await self.rename_player_categories([ev.data["pid"]])
+        if ev.kind == "GAME_START":                 # names are locked now: "Your State" becomes the State's name
+            await self.rename_player_categories()
         if ev.kind in ("PACT_JOINED", "PACT_LEFT", "PACT_KICKED", "PACT_MESSAGE"):
             await self._pact(ev)
 
@@ -169,32 +172,90 @@ class Router:
         if ev.kind == "PACT_KICKED":
             await self.to_player(d["member"], f"You were removed from the pact **{pc['name']}**.")
 
-    async def state_category(self, guild: discord.Guild, pid: str | None = None) -> discord.CategoryChannel | None:
-        """A "Your State" category with room for one more channel.
+    # ---- each player's own category: their console and pact channels, seen only by them
+    #
+    # Called "Your State" during registration and renamed to the State's name
+    # when the game starts. Not on every rename before that: Discord allows
+    # only about 2 renames per channel every 10 minutes. Categories have no
+    # member list, and nobody else can see it, so the name gives nothing away.
 
-        Consoles and pact copies share it, so each player sees their console
-        and their pacts together, just below Info. Discord allows 50 channels per
-        category; past that the bot adds another "Your State" category, and
-        each player only sees the ones holding their own channels. A player's
-        pact copies go next to their console when there's room."""
-        server = self.svc.server
-        extra = server.setdefault("state_categories", [])
-        cats = [c for c in (guild.get_channel(cid or 0) for cid in [server.get("console_category_id"), *extra]) if c]
-        if pid:
-            console = guild.get_channel(self.svc.console_of(pid) or 0)
-            if console and console.category and len(console.category.channels) < 50:
-                return console.category
-        for cat in cats:
-            if len(cat.channels) < 50:
-                return cat
+    def category_name(self, pid: str) -> str:
+        p = self.svc.game.get(pid)
+        if p and self.svc.game.state.phase != "registration":
+            return p.state_name[:100]
+        return discord_setup.CONSOLE_CATEGORY
+
+    async def player_category(self, guild: discord.Guild, pid: str) -> discord.CategoryChannel:
+        cats = self.svc.server.setdefault("player_categories", {})
+        cat = guild.get_channel(cats.get(pid) or 0)
+        if cat:
+            return cat
+        member = guild.get_member(int(pid)) or discord.Object(int(pid))
         cat = await guild.create_category(
-            discord_setup.CONSOLE_CATEGORY,
+            self.category_name(pid),
             overwrites={guild.default_role: discord.PermissionOverwrite(view_channel=False),
-                        guild.me: discord.PermissionOverwrite(**discord_setup.BOT_PERMS)},
-            position=(cats[-1].position + 1) if cats else 0, reason="Statecraft: more room for consoles and pacts")
-        extra.append(cat.id)
+                        guild.me: discord.PermissionOverwrite(**discord_setup.BOT_PERMS),
+                        member: discord.PermissionOverwrite(view_channel=True)},
+            reason="Statecraft: a player's own category")
+        cats[pid] = cat.id
         self.svc.save_server()
+        info = guild.get_channel(self.svc.server.get("info_category_id") or 0)
+        try:                                     # just below Info, above the gameplay channels
+            if info:
+                await cat.move(after=info, reason="Statecraft")
+        except discord.HTTPException:
+            pass
         return cat
+
+    async def rename_player_categories(self, pids: list[str] | None = None) -> None:
+        guild = self.bot.get_guild(self.svc.cfg.guild_id)
+        cats = self.svc.server.get("player_categories", {})
+        for pid in (pids if pids is not None else list(cats)):
+            cat = guild.get_channel(cats.get(pid) or 0) if guild else None
+            name = self.category_name(pid)
+            if cat and cat.name != name:
+                try:
+                    await cat.edit(name=name, reason="Statecraft")
+                except discord.HTTPException:
+                    log.exception("category rename failed")
+
+    async def migrate_player_categories(self, guild: discord.Guild) -> list[str]:
+        """Move consoles and pact copies out of the old shared "Your State"
+        categories into each player's own, then delete the old ones if empty."""
+        moved = 0
+        cats = self.svc.server.setdefault("player_categories", {})
+        for pid, cid in list(self.svc.server.get("consoles", {}).items()):
+            console = guild.get_channel(cid)
+            if not console:
+                continue
+            cat = await self.player_category(guild, pid)
+            mine = [console] + [guild.get_channel(rec["channel"]) for copies in self.svc.pact_channels().values()
+                                for p, rec in copies.items() if p == pid]
+            for ch in mine:
+                if ch and ch.category_id != cat.id:
+                    await ch.edit(category=cat, sync_permissions=False, reason="Statecraft: own category")
+                    moved += 1
+        await self.rename_player_categories()
+        own = set(cats.values())
+        old = [c for c in guild.categories if c.name == discord_setup.CONSOLE_CATEGORY and c.id not in own]
+        old += [c for c in (guild.get_channel(i) for i in self.svc.server.get("state_categories", [])) if c]
+        removed = 0
+        for cat in {c.id: c for c in old}.values():
+            if not cat.channels:
+                try:
+                    await cat.delete(reason="Statecraft: replaced by per-player categories")
+                    removed += 1
+                except discord.HTTPException:
+                    pass
+        self.svc.server.pop("state_categories", None)
+        self.svc.server.pop("console_category_id", None)
+        self.svc.save_server()
+        report = []
+        if moved:
+            report.append(f"moved {moved} console/pact channel(s) into players' own categories")
+        if removed:
+            report.append(f"deleted {removed} old shared category(ies)")
+        return report
 
     # ---- Spy: a private "Spy log" thread in the spy's console, for the rest of the day
     #
@@ -279,7 +340,7 @@ class Router:
         member = await guild.fetch_member(int(pid))
         slug = "".join(c if c.isalnum() else "-" for c in pc["name"].lower()).strip("-") or "pact"
         ch = await guild.create_text_channel(
-            f"pact-{slug}"[:90], category=await self.state_category(guild, pid),
+            f"pact-{slug}"[:90], category=await self.player_category(guild, pid),
             topic="Messages you type here are relayed to the other members under your state name.",
             overwrites={guild.default_role: discord.PermissionOverwrite(view_channel=False),
                         guild.me: discord.PermissionOverwrite(**discord_setup.BOT_PERMS),
@@ -761,7 +822,7 @@ def register_commands(bot: StatecraftBot) -> None:
                               ephemeral=True)
 
     async def create_console(guild: discord.Guild, member: discord.abc.User) -> discord.TextChannel:
-        cat = await bot.router.state_category(guild)
+        cat = await bot.router.player_category(guild, str(member.id))
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
             guild.me: discord.PermissionOverwrite(**discord_setup.BOT_PERMS),
@@ -823,6 +884,10 @@ def register_commands(bot: StatecraftBot) -> None:
             ch = bot.get_channel(cid) if cid else None
             if ch:
                 await ch.delete(reason="Statecraft: player left")
+            cat = bot.get_channel(svc.server.get("player_categories", {}).pop(pid, 0) or 0)
+            svc.save_server()
+            if cat:
+                await cat.delete(reason="Statecraft: player left")
             rid = svc.role_id("players")
             if rid and isinstance(ci.user, discord.Member):
                 await ci.user.remove_roles(discord.Object(rid))
@@ -1061,20 +1126,20 @@ def register_commands(bot: StatecraftBot) -> None:
 
         doomed = {cid for cid in svc.server.get("consoles", {}).values()}
         doomed |= {rec["channel"] for copies in svc.pact_channels().values() for rec in copies.values()}
-        console_cat = guild.get_channel(svc.server.get("console_category_id") or 0)
-        pact_cats = {guild.get_channel(cid) for cid in svc.server.get("pact_categories", [])}
-        pact_cats |= {c for c in guild.categories if c.name.startswith("Statecraft Pacts")}   # older layout
-        # Overflow "Your State" categories go; the main one (console_cat) is kept for the next game
+        # Every player's own category goes, with everything in it
+        pact_cats = {guild.get_channel(cid) for cid in svc.server.get("player_categories", {}).values()}
+        # Older layouts: shared "Your State" / pact / spy categories
+        pact_cats |= {guild.get_channel(cid) for cid in svc.server.get("pact_categories", [])}
+        pact_cats |= {c for c in guild.categories if c.name.startswith("Statecraft Pacts")}
         pact_cats |= {guild.get_channel(cid) for cid in svc.server.get("state_categories", [])}
-        pact_cats |= {c for c in guild.categories if c.name == discord_setup.CONSOLE_CATEGORY and c != console_cat}
-        doomed |= set(svc.server.get("spy_channels", {}).values())                        # older layout
+        pact_cats.add(guild.get_channel(svc.server.get("console_category_id") or 0))
+        pact_cats |= {c for c in guild.categories if c.name == discord_setup.CONSOLE_CATEGORY}
+        doomed |= set(svc.server.get("spy_channels", {}).values())
         pact_cats.add(guild.get_channel(svc.server.get("spy_category_id") or 0))
         pact_cats |= {c for c in guild.categories if c.name.startswith("Statecraft Spies")}
         pact_cats.discard(None)
-        pact_cats.discard(console_cat)
-        for cat in [console_cat, *pact_cats]:
-            if cat:
-                doomed |= {ch.id for ch in cat.channels}
+        for cat in pact_cats:
+            doomed |= {ch.id for ch in cat.channels}
         for cid in doomed:
             ch = guild.get_channel(cid)
             if ch:
@@ -1085,7 +1150,9 @@ def register_commands(bot: StatecraftBot) -> None:
             svc.set_console(pid, None)
         svc.server["pact_channels"] = {}
         svc.server["pact_categories"] = []
-        svc.server["state_categories"] = []
+        svc.server["player_categories"] = {}
+        svc.server.pop("state_categories", None)
+        svc.server.pop("console_category_id", None)
         svc.server["spy_threads"] = {}             # the threads went with the consoles
         svc.server.pop("spy_channels", None)
         svc.server.pop("spy_category_id", None)
@@ -1125,6 +1192,7 @@ def register_commands(bot: StatecraftBot) -> None:
         svc.server = {**discord_setup.load_server(svc.cfg.server_file), **keep}
         svc.save_server()
         bot._webhook = None
+        report += await bot.router.migrate_player_categories(i.guild)
         report += await bot.router.post_guides()
         await i.followup.send("\n".join(report)[:2000], ephemeral=True)
 
