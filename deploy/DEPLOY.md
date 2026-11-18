@@ -51,6 +51,24 @@ To pull the latest copy down to your PC: **(PC)** `scp -r root@IP:/opt/statecraf
 Those backups live on the same droplet. For protection against losing the droplet itself, turn on
 DigitalOcean's weekly backups on the droplet's Backups tab (about 20% of the droplet price).
 
+## Running Statecraft inside someone else's server
+
+The bot can live quietly in a shared server: it only touches its own roles and categories, and only pings
+players. In `/opt/statecraft/.env`:
+
+```
+GUILD_ID=<the other server's ID>
+CATEGORY_PLACEMENT=bottom        # Info, players' categories, then the game channels, after everything else
+ANNOUNCEMENTS_CHANNEL=           # blank: Statecraft gets its own #announcements (won't touch theirs)
+PLAYERS_ONLY=1                   # non-players see only Info (to read and /join), not the game channels
+```
+
+Then: invite the bot to that server with the same permissions as before (it needs Manage Channels and Manage
+Roles), `systemctl restart statecraft`, and run `/admin setup` there. Start that game fresh: `server.json`
+holds the old server's channel IDs, so move it (and `game.json`) aside first, e.g.
+`mv /opt/statecraft/server.json /opt/statecraft/server.old.json`. One bot runs one server at a time; to run two
+at once, set up a second bot application and a second copy in its own folder.
+
 ## Moving the game back to your PC
 
 Stop the droplet bot first (`systemctl stop statecraft`), then **(PC)**

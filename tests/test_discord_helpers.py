@@ -190,5 +190,47 @@ class ReactionPermissionTests(unittest.TestCase):
             self.assertTrue(ds.BOT_PERMS[k])                 # the bot must hold what it sets
 
 
+class LayoutTests(unittest.TestCase):
+    """Settings for running Statecraft inside a shared server."""
+
+    def test_own_announcements_channel_heads_the_game_channels(self):
+        from statecraft import discord_setup as ds
+        self.assertNotIn("announcements", ds.Layout().channels())          # default: the server's existing one
+        keys = list(ds.Layout(announcements="").channels())
+        first_game = next(k for k in keys if k not in ds.INFO_CHANNELS)
+        self.assertEqual(first_game, "announcements")
+        self.assertTrue(all(k in ds.INFO_CHANNELS for k in keys[:keys.index("announcements")]))
+
+    def test_players_only_hides_game_channels_from_everyone_else(self):
+        import discord
+        from types import SimpleNamespace
+        from statecraft import discord_setup as ds
+        everyone, me = discord.Object(1), discord.Object(2)
+        roles = {"players": discord.Object(3), "jury": discord.Object(4)}
+        guild = SimpleNamespace(me=me, default_role=everyone)
+        normal = ds._overwrites(guild, "readonly", roles)
+        self.assertTrue(normal[everyone].view_channel)                      # default: everyone reads
+        hidden = ds._overwrites(guild, "readonly", roles, members_only=True)
+        self.assertFalse(hidden[everyone].view_channel)
+        for role in roles.values():
+            self.assertTrue(hidden[role].view_channel)                       # players and jurors read
+            self.assertFalse(hidden[role].send_messages)                     # still read-only
+        open_ = ds._overwrites(guild, "open", roles, members_only=True)
+        self.assertTrue(open_[everyone].view_channel)                       # #register stays usable
+
+    def test_config_reads_layout(self):
+        import os
+        from unittest import mock
+        from statecraft import config
+        env = {"DISCORD_TOKEN": "x", "GUILD_ID": "1", "CATEGORY_PLACEMENT": "Bottom",
+               "ANNOUNCEMENTS_CHANNEL": "#news", "PLAYERS_ONLY": "1"}
+        with mock.patch.dict(os.environ, env), mock.patch.object(config, "load_dotenv"):
+            layout = config.load().layout
+        self.assertEqual((layout.placement, layout.announcements, layout.players_only), ("bottom", "news", True))
+        with mock.patch.dict(os.environ, {**env, "CATEGORY_PLACEMENT": "middle"}), \
+                mock.patch.object(config, "load_dotenv"), self.assertRaises(SystemExit):
+            config.load()
+
+
 if __name__ == "__main__":
     unittest.main()

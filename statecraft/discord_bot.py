@@ -39,7 +39,7 @@ BOARD_CHANGING = {"GAME_START", "MOVE", "ATTACK", "ELIMINATION", "UPGRADE", "DAI
 PICTURES = {"influence": lambda: render_image.influence_png()}   # illustrations used by the guides
 # Events after which the per-spy channels may need opening, closing, or a new Gift
 SPY_KINDS = {"INFO_PURCHASE", "INFO_EXPIRED", "GIFT", "ELIMINATION", "DAILY_AP", "ADMIN_EDIT", "GAME_OVER"}
-KEEP_ON_FRESH = {"admin_log", "faq", "rules", "how_to_play"}   # fresh_channels never wipes these
+KEEP_ON_FRESH = {"admin_log", "faq", "rules", "how_to_play", "announcements"}   # fresh_channels never wipes these
 
 
 def _same_card(msg: discord.Message, card: discord.Embed) -> bool:
@@ -1211,7 +1211,7 @@ def register_commands(bot: StatecraftBot) -> None:
         keep = {k: v for k, v in svc.server.items() if k not in ("roles", "channels", "category_id",
                                                                "console_category_id", "info_category_id",
                                                                "public_chat_webhook_id", "announcements_id")}
-        report = await discord_setup.ensure_server(i.guild, svc.cfg.server_file)
+        report = await discord_setup.ensure_server(i.guild, svc.cfg.server_file, layout=svc.cfg.layout)
         svc.server = {**discord_setup.load_server(svc.cfg.server_file), **keep}
         svc.save_server()
         bot._webhook = None
@@ -1484,7 +1484,7 @@ def register_commands(bot: StatecraftBot) -> None:
         keep = {k: v for k, v in svc.server.items() if k not in ("roles", "channels", "category_id",
                                                                "console_category_id", "info_category_id",
                                                                "public_chat_webhook_id", "announcements_id")}
-        await discord_setup.ensure_server(guild, svc.cfg.server_file)
+        await discord_setup.ensure_server(guild, svc.cfg.server_file, layout=svc.cfg.layout)
         svc.server = {**discord_setup.load_server(svc.cfg.server_file), **keep}
         svc.save_server()
         bot._webhook = None

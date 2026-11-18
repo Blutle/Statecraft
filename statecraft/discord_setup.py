@@ -9,6 +9,7 @@ git-ignored. It holds no secrets, but it is specific to the server.
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 
 import discord
@@ -17,7 +18,32 @@ CATEGORY = "Statecraft"                # gameplay channels
 INFO_CATEGORY = "Info"                 # rules, how-to-play, register: at the top; players can collapse it
 CONSOLE_CATEGORY = "Your State"        # a player's own category until the game starts (then the State's name)
 INFO_CHANNELS = {"faq", "rules", "how_to_play", "register"}
-ANNOUNCEMENTS = "announcements"        # the server's existing channel; found by name, never modified
+ANNOUNCEMENTS = "announcements"
+
+
+@dataclass(frozen=True)
+class Layout:
+    """Where Statecraft sits in a server (set in .env; see Config).
+
+    placement: "top" puts Info first in the channel list; "bottom" puts Info
+        and the game channels after everything else, for a shared server.
+    announcements: the name of an existing channel outside Statecraft for
+        /announce (found by name, never modified), or "" to give Statecraft
+        its own #announcements at the top of the game channels.
+    players_only: hide the game channels from anyone without the Players (or
+        Jury) role. Info stays visible so people can still read and /join.
+    """
+    placement: str = "top"
+    announcements: str = ANNOUNCEMENTS
+    players_only: bool = False
+
+    def channels(self) -> dict:
+        if self.announcements:
+            return CHANNELS
+        own = {"announcements": (ANNOUNCEMENTS, "News from the referee.", "readonly")}
+        info = {k: v for k, v in CHANNELS.items() if k in INFO_CHANNELS}
+        game = {k: v for k, v in CHANNELS.items() if k not in INFO_CHANNELS}
+        return {**info, **own, **game}
 
 ROLES = {
     # key: (name, colour)
@@ -76,9 +102,16 @@ JURY_EXTRAS = dict(add_reactions=True, attach_files=True, embed_links=True)
 PLAYER_PRIVATE = dict(use_external_apps=False, **NO_MEDIA)
 
 
-def _overwrites(guild: discord.Guild, access: str, roles: dict[str, discord.Role]) -> dict:
+def _overwrites(guild: discord.Guild, access: str, roles: dict[str, discord.Role],
+                members_only: bool = False) -> dict:
+    """members_only: a game channel on a players-only server, readable by the
+    Players and Jury roles instead of everyone."""
     bot = {guild.me: discord.PermissionOverwrite(**BOT_PERMS)}
     everyone = guild.default_role
+    if access == "readonly" and members_only:
+        return {everyone: discord.PermissionOverwrite(**HIDDEN),
+                roles["players"]: discord.PermissionOverwrite(**READ_ONLY),
+                roles["jury"]: discord.PermissionOverwrite(**READ_ONLY), **bot}
     if access == "readonly":
         return {everyone: discord.PermissionOverwrite(**READ_ONLY), **bot}
     if access == "open":
@@ -125,9 +158,10 @@ class _Report(list):
             self.echo(line)
 
 
-async def ensure_server(guild: discord.Guild, path: Path, echo=None) -> list[str]:
+async def ensure_server(guild: discord.Guild, path: Path, echo=None, layout: Layout = Layout()) -> list[str]:
     """Create or repair everything. Returns a human-readable report."""
     saved = load_server(path)
+    spec = layout.channels()
     data = {"guild_id": guild.id, "roles": {}, "channels": {}}
     report = _Report(echo)
 
@@ -145,9 +179,9 @@ async def ensure_server(guild: discord.Guild, path: Path, echo=None) -> list[str
         data["roles"][key] = role.id
 
     # Categories
-    async def ensure_category(key: str, name: str, access: str) -> discord.CategoryChannel:
+    async def ensure_category(key: str, name: str, access: str, members_only: bool = False) -> discord.CategoryChannel:
         cat = guild.get_channel(saved.get(key, 0)) or discord.utils.get(guild.categories, name=name)
-        ow = _overwrites(guild, access, roles)
+        ow = _overwrites(guild, access, roles, members_only)
         if cat is None:
             cat = await guild.create_category(name, overwrites=ow, reason="Statecraft setup")
             report.append(f"created category {name}")
@@ -157,26 +191,30 @@ async def ensure_server(guild: discord.Guild, path: Path, echo=None) -> list[str
         data[key] = cat.id
         return cat
 
-    category = await ensure_category("category_id", CATEGORY, "readonly")
+    category = await ensure_category("category_id", CATEGORY, "readonly", members_only=layout.players_only)
     info = await ensure_category("info_category_id", INFO_CATEGORY, "readonly")
-    try:                                   # Info at the top; players' own categories are added right below it
-        await info.move(beginning=True, reason="Statecraft setup")
+    try:
+        if layout.placement == "bottom":   # after everything else: Info, players' own categories, then the game
+            await info.move(end=True, reason="Statecraft setup")
+            await category.move(end=True, reason="Statecraft setup")
+        else:                              # Info first; players' own categories are added right below it
+            await info.move(beginning=True, reason="Statecraft setup")
     except discord.HTTPException:
         pass
 
     # Channels
     channels: dict[str, discord.TextChannel] = {}
-    for key, (name, topic, access) in CHANNELS.items():
+    for key, (name, topic, access) in spec.items():
         home = info if key in INFO_CHANNELS else category
         ch = guild.get_channel(saved.get("channels", {}).get(key, 0)) \
             or discord.utils.get(home.text_channels, name=name) \
             or discord.utils.get(category.text_channels, name=name)
-        ow = _overwrites(guild, access, roles)
+        ow = _overwrites(guild, access, roles, members_only=layout.players_only and key not in INFO_CHANNELS)
         if ch is None:
             ch = await home.create_text_channel(name, topic=topic, overwrites=ow, reason="Statecraft setup")
             report.append(f"created #{name}")
-            # keep the category in CHANNELS order (new channels are otherwise added at the bottom)
-            keys = [k for k in CHANNELS if (k in INFO_CHANNELS) == (key in INFO_CHANNELS)]
+            # keep the category in spec order (new channels are otherwise added at the bottom)
+            keys = [k for k in spec if (k in INFO_CHANNELS) == (key in INFO_CHANNELS)]
             before = [channels[k] for k in keys[:keys.index(key)] if k in channels]
             try:
                 if before:
@@ -192,8 +230,8 @@ async def ensure_server(guild: discord.Guild, path: Path, echo=None) -> list[str
         channels[key] = ch
         data["channels"][key] = ch.id
 
-    # Channels moved between categories can land out of order: put each category back in CHANNELS order
-    for group in ([k for k in CHANNELS if k in INFO_CHANNELS], [k for k in CHANNELS if k not in INFO_CHANNELS]):
+    # Channels moved between categories can land out of order: put each category back in spec order
+    for group in ([k for k in spec if k in INFO_CHANNELS], [k for k in spec if k not in INFO_CHANNELS]):
         chans = [channels[k] for k in group]
         if [c.id for c in sorted(chans, key=lambda c: c.position)] != [c.id for c in chans]:
             try:
@@ -215,26 +253,31 @@ async def ensure_server(guild: discord.Guild, path: Path, echo=None) -> list[str
         report.append("found #public-chat webhook")
     data["public_chat_webhook_id"] = hook.id
 
-    # #announcements is the server's own channel, outside Statecraft: /announce
-    # posts there, but setup never moves it or changes its permissions.
-    ours = {category.id, info.id}
-    ann = guild.get_channel(saved.get("announcements_id", 0))
-    if ann is None or ann.category_id in ours:
-        ann = next((c for c in guild.text_channels if c.name == ANNOUNCEMENTS and c.category_id not in ours), None)
-    if ann is None:
-        report.append(f"⚠️ no #{ANNOUNCEMENTS} channel found outside Statecraft: /announce won't work until "
-                      "there is one (then run /admin setup again)")
+    # /announce: either the server's own channel outside Statecraft (found by
+    # name; setup never moves it or changes its permissions), or Statecraft's own.
+    if not layout.announcements:
+        data["announcements_id"] = channels["announcements"].id
+        report.append(f"using Statecraft's own #{ANNOUNCEMENTS} for /announce")
     else:
-        data["announcements_id"] = ann.id
-        perms = ann.permissions_for(guild.me)
-        missing = [n for n in ("view_channel", "send_messages", "embed_links", "mention_everyone")
-                   if not getattr(perms, n)]
-        report.append(f"using #{ann.name} for /announce" + (
-            f" ⚠️ but the bot is missing {', '.join(missing)} there" if missing else ""))
-    stray = discord.utils.get(category.text_channels, name=ANNOUNCEMENTS)
-    if stray:
-        report.append(f"⚠️ there's an #{ANNOUNCEMENTS} inside {CATEGORY} that the bot no longer uses; "
-                      "you can delete it")
+        want = layout.announcements
+        ours = {category.id, info.id}
+        ann = guild.get_channel(saved.get("announcements_id", 0))
+        if ann is None or ann.category_id in ours or ann.name != want:
+            ann = next((c for c in guild.text_channels if c.name == want and c.category_id not in ours), None)
+        if ann is None:
+            report.append(f"⚠️ no #{want} channel found outside Statecraft: /announce won't work until there is "
+                          "one (or set ANNOUNCEMENTS_CHANNEL= blank in .env to give Statecraft its own)")
+        else:
+            data["announcements_id"] = ann.id
+            perms = ann.permissions_for(guild.me)
+            missing = [n for n in ("view_channel", "send_messages", "embed_links", "mention_everyone")
+                       if not getattr(perms, n)]
+            report.append(f"using #{ann.name} for /announce" + (
+                f" ⚠️ but the bot is missing {', '.join(missing)} there" if missing else ""))
+        stray = discord.utils.get(category.text_channels, name=ANNOUNCEMENTS)
+        if stray:
+            report.append(f"⚠️ there's an #{ANNOUNCEMENTS} inside {CATEGORY} that the bot no longer uses; "
+                          "you can delete it")
 
     # Existing consoles and pact copies: bring each player's overwrite up to date
     # (no external apps, reactions, files, or embeds)

@@ -29,7 +29,8 @@ async def main() -> int:
                 print("The bot isn't in the server yet. Run scripts/check_discord.py for the invite link.")
                 return
             print(f"Setting up Statecraft on {guild.name}...")
-            await discord_setup.ensure_server(guild, cfg.server_file, echo=lambda line: print(f"  {line}"))
+            await discord_setup.ensure_server(guild, cfg.server_file, echo=lambda line: print(f"  {line}"),
+                                              layout=cfg.layout)
             result["code"] = 0
         except discord.Forbidden as e:
             print(f"Discord refused a change (missing permission?): {e}")
