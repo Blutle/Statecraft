@@ -189,11 +189,11 @@ class SchedulerTests(unittest.TestCase):
         for pid in ("p4", "p5", "p6"):
             g.get(pid).alive, g.get(pid).hp = False, 0
         g.run_due_events(ct(2026, 11, 17, 14, 0))           # day 1: everyone alive gets 1
-        for pid in ("p4", "p5", "p6"):
-            self.assertTrue(g.vote(pid, "p2", now=ct(2026, 11, 17, 22, 0)).ok)
+        for pid, target in (("p4", "p2"), ("p5", "p2"), ("p6", "p1")):
+            self.assertTrue(g.vote(pid, target, now=ct(2026, 11, 17, 22, 0)).ok)
         g.run_due_events(ct(2026, 11, 18, 14, 0))
-        self.assertEqual(g.get("p2").ap, 3)                 # 1 + 1 daily + 1 jury
-        self.assertEqual(g.get("p1").ap, 2)
+        self.assertEqual(g.get("p2").ap, 3)                 # 1 + 1 daily + 1 jury (2 votes)
+        self.assertEqual(g.get("p1").ap, 2)                 # 1 vote: nothing
 
     def test_nothing_runs_after_game_ends(self):
         g = clocked_game(ct(2026, 11, 17, 10, 0))

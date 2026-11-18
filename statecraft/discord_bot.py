@@ -457,11 +457,11 @@ class Router:
             pass
 
     async def close_dm_threads(self, pid: str) -> None:
-        """A destroyed State loses its private conversations. Its own threads
-        are removed from its console (like its pact channels); the other side
-        keeps theirs to read back, with a closing note (anything they type
-        there is refused). The destroyed side's threads are forgotten, so if
-        the referee revives the State it starts fresh conversations."""
+        """A destroyed State loses all its conversation threads: they're
+        removed from its console (the referee can still read them) and
+        forgotten, so it starts fresh threads with other jurors, or with
+        survivors if the referee revives it. The other side keeps its copy
+        to read back, with a closing note (anything typed there is refused)."""
         name = self.svc.game.get(pid).state_name
         for owner, threads in list(self.svc.server.get("dm_threads", {}).items()):
             for other, tid in list(threads.items()):
@@ -707,13 +707,16 @@ def register_commands(bot: StatecraftBot) -> None:
     def is_admin(i: discord.Interaction) -> bool:
         return i.user.id in bot.cfg.admin_ids
 
-    async def states_autocomplete(i: discord.Interaction, current: str, alive_only: bool):
+    async def states_autocomplete(i: discord.Interaction, current: str, alive_only: bool, same_side: bool = False):
         if svc.game.state.phase == "registration" and not is_admin(i):
             return []                      # who has joined stays secret until the start
         cur = current.lower()
+        me = svc.game.get(str(i.user.id))
         out = []
         for p in svc.game.state.players.values():
             if alive_only and not p.alive:
+                continue
+            if same_side and me and (p.alive != me.alive or p.id == me.id):
                 continue
             if cur in p.state_name.lower() or cur == p.marker.lower():
                 out.append(app_commands.Choice(name=f"{p.state_name} [{p.marker}]"[:100], value=p.id))
@@ -724,6 +727,9 @@ def register_commands(bot: StatecraftBot) -> None:
 
     async def any_states(i, current):
         return await states_autocomplete(i, current, False)
+
+    async def dm_states(i, current):           # survivors list survivors, jurors list jurors
+        return await states_autocomplete(i, current, False, same_side=True)
 
     # ---- registration
     # /join takes no name on purpose: if a slash command misfires in #register
@@ -968,7 +974,7 @@ def register_commands(bot: StatecraftBot) -> None:
             await ui.reply(i, await svc.run(lambda g, now: g.say(pid, message)))
 
     @tree.command(description="Send a private message to another state")
-    @app_commands.autocomplete(state=alive_states)
+    @app_commands.autocomplete(state=dm_states)
     async def dm(i: discord.Interaction, state: str, message: app_commands.Range[str, 1, 1500]):
         if pid := await ui.console_pid(i):
             tid, err = ui.resolve(state)
@@ -1175,6 +1181,14 @@ def register_commands(bot: StatecraftBot) -> None:
         if not await admin_only(i):
             return
         await ui.reply(i, await svc.run(lambda g, now: g.set_cooldown(seconds)), ephemeral=True)
+
+    @admin.command(description="Jury vote bands on (2 votes = +1 AP, 3 = nothing, 4+ = no daily AP) or off")
+    @app_commands.choices(setting=[app_commands.Choice(name="on", value="on"),
+                                   app_commands.Choice(name="off", value="off")])
+    async def juryrule(i: discord.Interaction, setting: app_commands.Choice[str]):
+        if not await admin_only(i):
+            return
+        await ui.reply(i, await svc.run(lambda g, now: g.set_jury_bands(setting.value == "on")), ephemeral=True)
 
     @admin.command(description="Edit any stored value of a State: name, abbreviation, AP, HP, Influence, position...")
     @app_commands.autocomplete(state=any_states)

@@ -477,9 +477,9 @@ class TargetView(discord.ui.View):
         elif self.kind == "vote":
             await ui.reply(i, await ui.svc.run(lambda g, now: g.vote(pid, tid, now=now)), edit=True)
         elif self.kind == "dm":
-            if not (g.get(pid).alive and t.alive):          # a State was destroyed since the menu opened
-                await i.response.edit_message(content="Destroyed States can't send or receive private messages.",
-                                              view=None)
+            if g.get(pid).alive != t.alive:                 # a State was destroyed since the menu opened
+                await i.response.edit_message(content="Survivors can only message survivors, and jurors "
+                                                       "only jurors.", view=None)
                 return
             await i.response.defer(ephemeral=True, thinking=True)
             thread = await ui.bot.router.open_dm_thread(pid, tid)
@@ -608,9 +608,10 @@ class UI:
         view.add_item(PanelButton("board", "Board", B.secondary, 1, "🗺️"))
         view.add_item(PanelButton("refresh", "Refresh", B.secondary, 1, "🔄"))
         if phase == "active":
-            if p.alive:                                 # jurors lose public chat and private correspondence
+            if p.alive:                                 # jurors lose public chat, and only message jurors
                 view.add_item(PanelButton("say", "Public chat", B.secondary, 2, "📣"))
-                view.add_item(PanelButton("dm", "Message a state", B.secondary, 2, "✉️"))
+            view.add_item(PanelButton("dm", "Message a state" if p.alive else "Message a juror",
+                                      B.secondary, 2, "✉️"))
             view.add_item(PanelButton("anon", "Anonymous", B.secondary, 2, "🎭"))
         if phase == "active" and p.alive:
             view.add_item(PanelButton("pacts", "Pacts", B.secondary, 3, "🤝"))
@@ -741,10 +742,11 @@ class UI:
             await i.response.send_message(pact_summary(g, pid), view=PactMenuView(self, pid), ephemeral=True,
                                           allowed_mentions=NO_PINGS)
         elif what == "dm":
-            if not g.get(pid).alive:
-                await i.response.send_message("Destroyed States can't send private messages.", ephemeral=True)
+            alive = g.get(pid).alive                    # survivors message survivors, jurors message jurors
+            others = [p for p in g.state.players.values() if p.id != pid and p.alive == alive]
+            if not others:
+                await i.response.send_message("There are no other jurors to message yet.", ephemeral=True)
                 return
-            others = [p for p in g.alive_players() if p.id != pid]
             await i.response.send_message("Who do you want to message?", view=TargetView(self, pid, "dm", others),
                                           ephemeral=True)
         else:

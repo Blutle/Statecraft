@@ -282,7 +282,8 @@ class Sim:
         for p in g.state.players.values():
             expected = ap_before[p.id]
             if p.alive:
-                expected += g.s["daily_ap"] + votes.get(p.id, 0) // g.s["votes_per_ap"]
+                bonus, penalty = g.jury_effect(votes.get(p.id, 0))
+                expected += bonus + (0 if penalty else g.s["daily_ap"])
             if p.ap != expected:
                 self.fail(f"{p.state_name} AP after day tick {p.ap}, expected {expected}")
             self.expected_total_ap += p.ap - ap_before[p.id]

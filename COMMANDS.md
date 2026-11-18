@@ -111,14 +111,14 @@ Players are told that everything is logged for the post-game summary, including 
 | Command | What it does |
 |---|---|
 | `/say message:<text>` | Posts in #public-chat under your **state name** (via the webhook). Surviving states only. |
-| `/dm state:<state> message:<text>` | Sends a private message to another **surviving** state. It appears in your conversation thread with them, and in theirs with you, under your state name. |
+| `/dm state:<state> message:<text>` | Sends a private message. Survivors message survivors, and jurors message other jurors, never across. It appears in your conversation thread with them, and in theirs with you, under your state name. |
 | `/anon message:<text>` | Posts in #anonymous-chat with no name at all. |
 
-**Jurors lose public chat and private correspondence.** A destroyed state keeps `/anon` and #jury, and can still read #public-chat, the board, and `/status`, but it can't post in #public-chat, send or receive private messages, or use pacts:
-- Its own conversation threads are removed from its console. The other side keeps its copy to read back, with a closing note, and anything typed there is refused.
-- It is removed from every pact (the other members are told it was destroyed), and its pending invitations are withdrawn.
-- The panel drops **Public chat**, **Message a state**, and **Pacts** for jurors.
-- If the referee revives a state, it can message again in fresh threads, but it isn't put back into its old pacts.
+**Jurors lose public chat and contact with survivors.** A destroyed state keeps `/anon`, #jury, and private messages **with other jurors**, and can still read #public-chat, the board, and `/status`. It can't post in #public-chat, message survivors (or be messaged by them), or use pacts:
+- All its conversation threads are removed from its console (the referee can still read them). It opens new ones with other jurors through **✉️ Message a juror**. The survivor's side keeps its copy to read back, with a closing note, and anything typed there is refused.
+- It is removed from every pact (the other members are told it was destroyed), and its pending invitations are withdrawn. There are no jury pacts.
+- The panel drops **Public chat** and **Pacts** for jurors, and **Message a state** becomes **Message a juror**.
+- If the referee revives a state, it can message survivors again in fresh threads, but it isn't put back into its old pacts.
 
 **Conversation threads:**
 - Each pair of states talks in a private thread inside each player's console, such as `↔ Veyran Empire`, visible only to that player, the bot, and the admin.
@@ -158,7 +158,7 @@ Pacts let players form anonymous group chats, such as alliances, by inviting oth
 
 | Command | What it does |
 |---|---|
-| `/vote state:<state>` | Secretly votes for a surviving state. Voting is open **8:00 PM until 1:45 PM**, and you can change your vote until the lock. At the 2:00 PM tally, each state gets 1 AP per 2 votes. Only the totals are announced, never who voted for whom. |
+| `/vote state:<state>` | Secretly votes for a surviving state. Voting is open **8:00 PM until 1:45 PM**, and you can change your vote until the lock. At the 2:00 PM tally, with **vote bands** (the default): **exactly 2 votes = +1 AP**, **3 = nothing**, **4 or more = no daily AP that day**. With bands off (`/admin juryrule off`): 1 AP per 2 votes. Only the totals and their effects are announced, never who voted for whom. |
 
 Jury discussion happens in #jury. It's normal chat, not a command.
 
@@ -183,6 +183,7 @@ Jury discussion happens in #jury. It's normal chat, not a command.
 | `/admin edit state:<state> field:<field> value:<value> [announce:<true/false>]` | (Yes/Cancel) Sets any stored value of a state, with the same validation as normal play. Every edit is logged, and the player is always told privately (Recent activity). <ul><li>**Name / Abbreviation:** unique, with the usual limits. Renaming retitles other players' conversation threads.</li><li>**AP:** never announced.</li><li>**HP:** **0 destroys** the state (normal elimination: owner revealed, Jury role, win check). **Above 0 on a destroyed state revives** it (Jury role removed).</li><li>**Influence** (field: Influence).</li><li>**Position:** a square like `C5`. It must be on the board and empty.</li><li>**Cooldown:** value `reset`.</li><li>**Owner name:** what's revealed on elimination.</li></ul>Changes to public stats (name, abbreviation, HP, Influence, position) are posted in #action-log as a "Referee adjustment" unless `announce` is false. The console version has the same thing as `edit <player> <field> <value>`. |
 | `/admin give state:<state> amount:<n>` | Adds or removes AP (negative amount). Logged. |
 | `/admin cooldown seconds:<n>` | Sets **everyone's** action cooldown, in seconds (e.g. `30` for a test; `900` restores the normal 15 minutes). Takes effect immediately, including cooldowns already running. Announced in #action-log and logged. `/admin guides` updates the number in #rules. |
+| `/admin juryrule setting:<on/off>` | Turns the Jury **vote bands** on (exactly 2 votes = +1 AP, 3 = nothing, 4+ = no daily AP) or off (1 AP per 2 votes). Applies from the next tally. Announced in #action-log and logged. Run `/admin guides` afterwards to update #rules. |
 | `/admin declare states:<states>` | (Yes/Cancel) Ends the game with one or more joint winners, for a draw agreed outside the game. Reveals the winners. |
 | `/admin consoles` | Every state with its owner and clickable links to their console, conversation threads, and pact channels. Consoles have random names, so this is how you find them. (As server owner you can open all of them. Anyone else with Administrator or Manage Threads can too, so keep those roles to yourself.) |
 | `/admin log [state:<state>] [count:<n>]` | The most recent history-log entries (20 by default, up to 60) for one state or for everyone. Covers actions (rejected ones marked ✗), messages, pact messages, and anonymous posts, **with the real author**. |
@@ -215,7 +216,7 @@ These let one person run a full game alone on the test server. They are disabled
 | 8:15 PM | Ends Spy access and notifies the Spies. |
 | Every public game event | Posts a short card in **#action-log**: an icon and one or two lines, with each state shown as **Name** `ABC`. Attacks show hearts for the HP left. Eliminations, the day start, and jury results each have their own card, and the game start is a roster card. Role pings sit on the line above the card, because pings don't work inside cards. |
 | After **every** visible action | Updates the #game-board message in place: the map plus the public stats table (HP, Influence, position, status). Each marker shows its state's Influence number so reach can be judged at a glance. The message has the same **"Show Influence for…" dropdown**, and picking a state shows the highlighted board **privately** to whoever picked it, so nobody's choice is visible. Gifts aren't visible, so they don't trigger an update. |
-| On elimination | Reveals the owner, grants `@Statecraft-Jury` (and access to #jury), posts in #action-log, removes the state from its pacts, and closes its conversation threads. |
+| On elimination | Reveals the owner, grants `@Statecraft-Jury` (and access to #jury), posts in #action-log, removes the state from its pacts, and removes all its conversation threads from its console. |
 | At game end | Announces the winner(s) and reveals their owners. |
 
 ## The board image

@@ -28,7 +28,7 @@ HELP = """**Statecraft**: use the **control panel** at the bottom of your consol
 Move 1 AP · Attack 1 AP · Upgrade Influence 2 AP (+1) · Gift 1 AP (give it to a State within your Influence) · Spy 1 AP (today's Gift log until 8:15 PM)
 **Info** (free, any time): `/status` (you, or any State) · `/board` · `/spylog` · `/help` · `/panel` (re-post your panel)
 **Talk** (free, any time): `/say` (#public-chat, under your state name) · `/dm` (another state's console) · `/anon` (#anonymous-chat, no name)
-**Jury** (after elimination): `/vote` 8:00 PM-1:45 PM, secret, changeable until the lock. Jurors keep `/anon` and #jury, but lose `/say`, private messages, and pacts
+**Jury** (after elimination): `/vote` 8:00 PM-1:45 PM, secret, changeable until the lock. Exactly 2 votes = +1 AP, 3 = nothing, 4+ = no daily AP. Jurors keep `/anon`, #jury, and `/dm` with other jurors, but lose `/say` and pacts
 **Pings**: `/notify on|off` for minor events (moves, upgrades, info purchases); add `chat:` to mute or unmute one pact or conversation
 
 Influence: a straight step counts 1, a diagonal step counts 2. Everything you send the bot is logged for the post-game summary."""
@@ -195,11 +195,17 @@ def action_card(ev, game: Game, now: datetime | None = None) -> discord.Embed:
     elif k == "INFO_PURCHASE":
         emb.description = f"🕵️ {tag(d['pid'])} is spying"
     elif k == "DAILY_AP":
+        held = d.get("withheld") or []
+        except_ = (" except " + ", ".join(tag(pid) for pid in held)) if held else ""
         emb.description = (f"🌅 **Day {d['day']} begins** · {d['alive']} states remain · "
-                           f"each gains {d['amount']} AP · actions open until {_clock(s['window_close'])}")
+                           f"each gains {d['amount']} AP{except_} · actions open until {_clock(s['window_close'])}")
     elif k == "JURY_RESULT":
-        lines = [f"{tag(a['pid'])}: {a['votes']} vote{'s' if a['votes'] != 1 else ''}"
-                 + (f" → **+{a['bonus']} AP**" if a["bonus"] else "") for a in d.get("awards", [])]
+        def effect(a):
+            if a.get("penalty"):
+                return " → **loses its daily AP**"
+            return f" → **+{a['bonus']} AP**" if a["bonus"] else ""
+        lines = [f"{tag(a['pid'])}: {a['votes']} vote{'s' if a['votes'] != 1 else ''}" + effect(a)
+                 for a in d.get("awards", [])]
         emb.description = "🗳️ **Jury results**\n" + ("\n".join(lines) or "No valid votes.")
     elif k == "GAME_START":
         emb.title = "⚔️ Statecraft begins"
@@ -224,7 +230,10 @@ def action_card(ev, game: Game, now: datetime | None = None) -> discord.Embed:
     elif k == "ADMIN_EDIT":
         emb.description = f"🛠️ Referee adjustment: {ev.public.split(': ', 1)[-1]}"
     elif k == "SETTING":
-        emb.description = f"⏱️ The referee set the action cooldown to **{d['text']}**"
+        if d.get("setting") == "jury_bands":
+            emb.description = f"🗳️ The referee changed the Jury rule: {d['text']}"
+        else:
+            emb.description = f"⏱️ The referee set the action cooldown to **{d['text']}**"
     elif k == "REVIVED":
         emb.description = f"✨ {tag(d['pid'])} has been restored by the referee"
     else:

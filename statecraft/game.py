@@ -414,13 +414,15 @@ class Game:
 
     DESTROYED_NOTE = ("Your state has been destroyed. You are now on the Jury and can vote each night. "
                       "Your pacts and private conversations have closed, and you can no longer post in "
-                      "#public-chat (you can still read it). You can post in #anonymous-chat and #jury.")
+                      "#public-chat (you can still read it). You can post in #anonymous-chat and #jury, "
+                      "and privately message other jurors.")
 
     def _destroy(self, p: Player) -> list[Event]:
         """Mark a State destroyed. Its controller joins the Jury: they keep
-        anonymous chat and the jury chat, but lose public chat and private
-        correspondence, so they're taken out of every pact and their pending
-        pact invitations are withdrawn. (say() and dm() refuse them too.)"""
+        anonymous chat and the jury chat, and can message other jurors, but
+        lose public chat and pacts, so they're taken out of every pact and
+        their pending pact invitations are withdrawn. (say() and dm() enforce
+        the rest.)"""
         p.alive = False
         p.eliminated_on_day = self.state.day
         if p.id in self.state.info_access:          # death ends purchased info access
@@ -558,6 +560,7 @@ class Game:
         events: list[Event] = []
 
         # Jury tally: votes for states that died since voting are discarded.
+        withheld: list[str] = []                  # States the Jury overloaded: no daily AP today
         if self.state.jury_votes:
             counts: dict[str, int] = {}
             for tid in self.state.jury_votes.values():
@@ -567,10 +570,13 @@ class Game:
             parts, awards = [], []
             for tid, n in sorted(counts.items(), key=lambda kv: -kv[1]):
                 t = self.get(tid)
-                bonus = n // self.s["votes_per_ap"]
+                bonus, penalty = self.jury_effect(n)
                 t.ap += bonus
-                parts.append(f"{t.state_name}: {n} vote{'s' if n != 1 else ''} (+{bonus} AP)")
-                awards.append({"pid": tid, "votes": n, "bonus": bonus})
+                if penalty:
+                    withheld.append(tid)
+                effect = "loses its daily AP" if penalty else f"+{bonus} AP"
+                parts.append(f"{t.state_name}: {n} vote{'s' if n != 1 else ''} ({effect})")
+                awards.append({"pid": tid, "votes": n, "bonus": bonus, "penalty": penalty})
             events.append(Event("JURY_RESULT", public="Jury results: " + ("; ".join(parts) or "no valid votes") + ".",
                                 data={"awards": awards}))
             self._archive_votes(tallied=True)
@@ -579,13 +585,49 @@ class Game:
         self.state.gifts_today = []
         self.state.day += 1
         for p in self.alive_players():
-            p.ap += self.s["daily_ap"]
+            if p.id not in withheld:
+                p.ap += self.s["daily_ap"]
+        public = f"Day {self.state.day} begins. Each surviving state receives {self.s['daily_ap']} AP"
+        if withheld:
+            public += " except " + ", ".join(self.get(t).state_name for t in withheld)
         events.append(Event(
-            "DAILY_AP",
-            public=f"Day {self.state.day} begins. Each surviving state receives {self.s['daily_ap']} AP.",
-            data={"day": self.state.day, "alive": len(self.alive_players()), "amount": self.s["daily_ap"]},
+            "DAILY_AP", public=public + ".",
+            data={"day": self.state.day, "alive": len(self.alive_players()), "amount": self.s["daily_ap"],
+                  "withheld": withheld},
         ))
         return self._done(Result(True, f"Advanced to Day {self.state.day}.", events))
+
+    def jury_effect(self, votes: int) -> tuple[int, bool]:
+        """(bonus AP, loses daily AP) for a State that received `votes` votes.
+
+        With vote bands on (the default): exactly jury_reward_votes gives
+        +1 AP, a few more gives nothing, and jury_penalty_votes or more
+        costs the State its daily AP. So jurors have to coordinate, and one
+        secret extra vote can turn a reward into a punishment. With bands
+        off: every votes_per_ap votes gives +1 AP."""
+        s = self.s
+        if not s["jury_bands"]:
+            return votes // s["votes_per_ap"], False
+        if s["jury_penalty_votes"] and votes >= s["jury_penalty_votes"]:
+            return 0, True
+        return (1 if votes == s["jury_reward_votes"] else 0), False
+
+    @recorded("admin_set_jury_bands")
+    def set_jury_bands(self, on: bool) -> Result:
+        self.s["jury_bands"] = 1 if on else 0
+        text = self.jury_rule_text()
+        return self._done(Result(True, f"[Admin] Jury rule: {text}", [
+            Event("SETTING", public=f"The referee changed the Jury rule: {text}",
+                  data={"setting": "jury_bands", "on": bool(on), "text": text})]))
+
+    def jury_rule_text(self) -> str:
+        s = self.s
+        if not s["jury_bands"]:
+            return f"every {s['votes_per_ap']} votes a State receives give it +1 AP."
+        text = f"exactly {s['jury_reward_votes']} votes give a State +1 AP, more give nothing"
+        if s["jury_penalty_votes"]:
+            text += f", and {s['jury_penalty_votes']} or more cost it its daily AP"
+        return text + "."
 
     def _archive_votes(self, tallied: bool) -> None:
         """Move current ballots into the private (admin-only) vote history."""
@@ -853,7 +895,7 @@ class Game:
             return Result.fail("Chat through the bot is only open while the game is in progress.")
         if not p.alive:
             return Result.fail("Destroyed States can't post in #public-chat. You can still post in "
-                               "#anonymous-chat and #jury.")
+                               "#anonymous-chat and #jury, and message other jurors.")
         text, err = self._message_text(text)
         if err:
             return Result.fail(err)
@@ -863,7 +905,8 @@ class Game:
 
     @recorded("dm")
     def dm(self, pid: str, tid: str, text: str) -> Result:
-        """Private state-to-state message, relayed to the recipient's console."""
+        """Private state-to-state message, relayed to the recipient's console.
+        Survivors message survivors and jurors message jurors, never across."""
         p, t = self.get(pid), self.get(tid)
         if not p:
             return Result.fail("You are not a player in this game.")
@@ -873,11 +916,10 @@ class Game:
             return Result.fail("No such state.")
         if t.id == p.id:
             return Result.fail("You can't message yourself.")
-        if not p.alive:
-            return Result.fail("Destroyed States can't send private messages. You can still post in "
-                               "#anonymous-chat and #jury.")
-        if not t.alive:
+        if p.alive and not t.alive:
             return Result.fail(f"{t.state_name} has been destroyed and can't receive private messages.")
+        if t.alive and not p.alive:
+            return Result.fail("Jurors can only send private messages to other jurors.")
         text, err = self._message_text(text)
         if err:
             return Result.fail(err)

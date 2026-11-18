@@ -312,6 +312,34 @@ class DayAndJuryTests(unittest.TestCase):
         self.assertEqual(g.get("p1").ap, 1)                  # 1 vote -> nothing
         self.assertEqual(g.state.jury_votes, {})
 
+    def test_vote_bands(self):
+        g = make_game(6)
+        jurors = ["p3", "p4", "p5", "p6"]
+        for pid in jurors:
+            g.get(pid).alive = False
+
+        def night(votes):                                    # votes: target per juror, in order
+            for juror, target in zip(jurors, votes):
+                g.vote(juror, target)
+            return g.next_day()
+
+        night(["p1", "p1", "p2", "p2"])                       # exactly 2 each: +1 AP + daily
+        self.assertEqual([g.get(p).ap for p in ("p1", "p2")], [2, 2])
+        night(["p1", "p1", "p1", "p2"])                       # 3 votes: nothing extra; 1 vote: nothing
+        self.assertEqual([g.get(p).ap for p in ("p1", "p2")], [3, 3])
+        res = night(["p1"] * 4)                               # 4 votes: no daily AP either
+        self.assertEqual([g.get(p).ap for p in ("p1", "p2")], [3, 4])
+        self.assertIn("loses its daily AP", res.events[0].public)
+        self.assertEqual(res.events[1].data["withheld"], ["p1"])
+        self.assertIn("except Republic of Aldren", res.events[1].public)
+
+    def test_jury_bands_can_be_switched_off(self):
+        g = make_game(3)
+        self.assertEqual(g.jury_effect(4), (0, True))
+        self.assertTrue(g.set_jury_bands(False).ok)
+        self.assertEqual(g.jury_effect(4), (4 // g.s["votes_per_ap"], False))
+        self.assertIn("every", g.jury_rule_text())
+
 
 class JuryScoreTests(unittest.TestCase):
     def test_scores_rank_votes_for_winner(self):
@@ -418,8 +446,10 @@ class JurorSocialTests(unittest.TestCase):
         self.assertFalse(g.say("p3", "The jury remembers.").ok)       # no public chat
         self.assertTrue(g.say("p1", "hi").ok)
         self.assertTrue(g.anon("p3", "psst").ok)
-        self.assertFalse(g.dm("p3", "p1", "I'm voting for you").ok)   # no private correspondence
-        self.assertIn("destroyed", g.dm("p1", "p3", "thanks").message)  # either way
+        self.assertFalse(g.dm("p3", "p1", "I'm voting for you").ok)   # no messages to survivors
+        self.assertIn("destroyed", g.dm("p1", "p3", "thanks").message)  # or from them
+        g.get("p2").alive, g.get("p2").hp = False, 0
+        self.assertTrue(g.dm("p3", "p2", "let's both vote for p1").ok)  # jurors message jurors
         self.assertFalse(g.move("p3", "n").ok)                         # and no gameplay
 
 

@@ -18,6 +18,21 @@ def _t(hhmm: str) -> str:
     return f"{(h - 1) % 12 + 1}:{m:02d} {'AM' if h < 12 else 'PM'}"
 
 
+def _jury_rule(s: dict) -> str:
+    if not s["jury_bands"]:
+        return f"Every full **{s['votes_per_ap']} votes** a State received gives it **+1 AP**."
+    r, p = s["jury_reward_votes"], s["jury_penalty_votes"]
+    text = f"A State that received **exactly {r} votes** gets **+1 AP**. "
+    if p:
+        between = f"{r + 1}" if p == r + 2 else f"{r + 1}–{p - 1}"
+        if p > r + 1:
+            text += f"**{between} votes** gives nothing, and "
+        text += f"**{p} or more** costs it its **daily AP** that day. Too much support backfires."
+    else:
+        text += "More than that gives nothing."
+    return text
+
+
 def rules(s: dict) -> list[tuple[str, str]]:
     open_, close, lock, fade = _t(s["window_open"]), _t(s["window_close"]), _t(s["vote_lock"]), _t(s["info_expire"])
     tz = "Central" if s["timezone"] == "America/Chicago" else s["timezone"]
@@ -67,8 +82,9 @@ def rules(s: dict) -> list[tuple[str, str]]:
          f"Every State starts with **{s['starting_hp']} HP**. A State at **0 HP** is destroyed:\n"
          "• Its controller is **revealed** to everyone.\n"
          "• They join the **Jury**.\n"
-         "• They're removed from every pact and can no longer send or receive private messages or post in "
-         "public chat. They can still post in anonymous chat and the Jury chat.\n"
+         "• They're removed from every pact, their private conversations close, and they can no longer post "
+         "in public chat. They can still post in anonymous chat and the Jury chat, and privately message "
+         "other jurors.\n"
          "• The State stays on the map as a permanent **obstacle**."),
 
         ("🗳️ The Jury",
@@ -76,7 +92,7 @@ def rules(s: dict) -> list[tuple[str, str]]:
          "remain.\n"
          f"• Each juror gets **one secret vote** for a surviving State, from **{close} until {lock}** the next day. "
          f"You can change it until the lock.\n"
-         f"• At **{open_}**, every full **{s['votes_per_ap']} votes** a State received gives it **+1 AP**.\n"
+         f"• At **{open_}**, the votes are counted. {_jury_rule(s)}\n"
          "• The vote **totals** are announced. Who voted for whom is never revealed."),
 
         ("🏆 Winning",
@@ -165,7 +181,8 @@ def how_to_play(s: dict) -> list[tuple[str, str]]:
          "• **✉️ Message a state**: opens a **private conversation thread** with that State inside your console. "
          "Type there like a normal chat. They see your messages under your State's name, and you see theirs.\n"
          "• If your State is destroyed, you keep anonymous chat and gain **#jury**. You can still read "
-         "#public-chat but not post there, and your conversation threads and pact channels close."),
+         "#public-chat but not post there. Your conversation threads and pact channels close, and **✉️ Message "
+         "a juror** opens private threads with other jurors."),
 
         ("🤝 Pacts (group chats)",
          f"Pacts are private group chats for alliances (or plots).\n"
