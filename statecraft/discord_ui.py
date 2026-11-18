@@ -608,8 +608,8 @@ class UI:
         view.add_item(PanelButton("board", "Board", B.secondary, 1, "🗺️"))
         view.add_item(PanelButton("refresh", "Refresh", B.secondary, 1, "🔄"))
         if phase == "active":
-            view.add_item(PanelButton("say", "Public chat", B.secondary, 2, "📣"))
-            if p.alive:                                 # jurors lose private correspondence
+            if p.alive:                                 # jurors lose public chat and private correspondence
+                view.add_item(PanelButton("say", "Public chat", B.secondary, 2, "📣"))
                 view.add_item(PanelButton("dm", "Message a state", B.secondary, 2, "✉️"))
             view.add_item(PanelButton("anon", "Anonymous", B.secondary, 2, "🎭"))
         if phase == "active" and p.alive:

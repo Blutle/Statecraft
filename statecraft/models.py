@@ -15,7 +15,7 @@ DEFAULT_SETTINGS = {
     "info_cost": 1,
     "gift_amount": 1,            # AP moved by one Gift (paid by the giver)
     "daily_ap": 1,
-    "votes_per_ap": 3,
+    "votes_per_ap": 2,
     "board_size": 0,             # 0 = automatic, using board_scale_pct
     "board_scale_pct": 75,       # automatic side = players * pct // 100 (16 players -> 12x12)
     "timezone": "America/Chicago",

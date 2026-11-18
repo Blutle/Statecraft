@@ -110,14 +110,14 @@ Players are told that everything is logged for the post-game summary, including 
 
 | Command | What it does |
 |---|---|
-| `/say message:<text>` | Posts in #public-chat under your **state name** (via the webhook). A destroyed state's name shows as "*Name* (destroyed)". |
+| `/say message:<text>` | Posts in #public-chat under your **state name** (via the webhook). Surviving states only. |
 | `/dm state:<state> message:<text>` | Sends a private message to another **surviving** state. It appears in your conversation thread with them, and in theirs with you, under your state name. |
 | `/anon message:<text>` | Posts in #anonymous-chat with no name at all. |
 
-**Jurors lose private correspondence.** A destroyed state keeps `/say`, `/anon`, and #jury, so the Jury still follows the game, but it can't send or receive private messages or use pacts:
+**Jurors lose public chat and private correspondence.** A destroyed state keeps `/anon` and #jury, and can still read #public-chat, the board, and `/status`, but it can't post in #public-chat, send or receive private messages, or use pacts:
 - Its own conversation threads are removed from its console. The other side keeps its copy to read back, with a closing note, and anything typed there is refused.
 - It is removed from every pact (the other members are told it was destroyed), and its pending invitations are withdrawn.
-- The panel drops **Message a state** and **Pacts** for jurors.
+- The panel drops **Public chat**, **Message a state**, and **Pacts** for jurors.
 - If the referee revives a state, it can message again in fresh threads, but it isn't put back into its old pacts.
 
 **Conversation threads:**
@@ -158,7 +158,7 @@ Pacts let players form anonymous group chats, such as alliances, by inviting oth
 
 | Command | What it does |
 |---|---|
-| `/vote state:<state>` | Secretly votes for a surviving state. Voting is open **8:00 PM until 1:45 PM**, and you can change your vote until the lock. At the 2:00 PM tally, each state gets 1 AP per 3 votes. Only the totals are announced, never who voted for whom. |
+| `/vote state:<state>` | Secretly votes for a surviving state. Voting is open **8:00 PM until 1:45 PM**, and you can change your vote until the lock. At the 2:00 PM tally, each state gets 1 AP per 2 votes. Only the totals are announced, never who voted for whom. |
 
 Jury discussion happens in #jury. It's normal chat, not a command.
 

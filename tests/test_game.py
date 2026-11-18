@@ -303,13 +303,13 @@ class DayAndJuryTests(unittest.TestCase):
             g.get(pid).alive = False
         self.assertFalse(g.vote("p1", "p2").ok)              # living can't vote
         self.assertFalse(g.vote("p3", "p4").ok)              # can't vote for dead
-        self.assertTrue(g.vote("p3", "p1").ok)
-        self.assertTrue(g.vote("p3", "p2").ok)               # changed vote
+        self.assertTrue(g.vote("p3", "p2").ok)
+        self.assertTrue(g.vote("p3", "p1").ok)               # changed vote
         self.assertTrue(g.vote("p4", "p2").ok)
         self.assertTrue(g.vote("p5", "p2").ok)
         g.next_day()
-        self.assertEqual(g.get("p2").ap, 2)                  # 3 votes -> +1, plus daily
-        self.assertEqual(g.get("p1").ap, 1)
+        self.assertEqual(g.get("p2").ap, 2)                  # 2 votes -> +1, plus daily
+        self.assertEqual(g.get("p1").ap, 1)                  # 1 vote -> nothing
         self.assertEqual(g.state.jury_votes, {})
 
 
@@ -412,14 +412,11 @@ class HistoryTests(unittest.TestCase):
 
 
 class JurorSocialTests(unittest.TestCase):
-    def test_jurors_keep_public_chat_but_lose_private_messages(self):
+    def test_jurors_keep_anonymous_chat_only(self):
         g = make_game(3)
         g.get("p3").alive, g.get("p3").hp = False, 0
-        res = g.say("p3", "The jury remembers.")
-        self.assertTrue(res.ok)
-        name = g.get("p3").state_name
-        self.assertEqual(res.events[0].data["state"], f"{name} (destroyed)")   # marked in #public-chat
-        self.assertEqual(g.say("p1", "hi").events[0].data["state"], g.get("p1").state_name)
+        self.assertFalse(g.say("p3", "The jury remembers.").ok)       # no public chat
+        self.assertTrue(g.say("p1", "hi").ok)
         self.assertTrue(g.anon("p3", "psst").ok)
         self.assertFalse(g.dm("p3", "p1", "I'm voting for you").ok)   # no private correspondence
         self.assertIn("destroyed", g.dm("p1", "p3", "thanks").message)  # either way

@@ -67,9 +67,8 @@ def rules(s: dict) -> list[tuple[str, str]]:
          f"Every State starts with **{s['starting_hp']} HP**. A State at **0 HP** is destroyed:\n"
          "• Its controller is **revealed** to everyone.\n"
          "• They join the **Jury**.\n"
-         "• They **lose private correspondence**: they're removed from every pact and can no longer send or "
-         "receive private messages. They can still post in public chat, anonymous "
-         "chat, and the Jury chat.\n"
+         "• They're removed from every pact and can no longer send or receive private messages or post in "
+         "public chat. They can still post in anonymous chat and the Jury chat.\n"
          "• The State stays on the map as a permanent **obstacle**."),
 
         ("🗳️ The Jury",
@@ -165,8 +164,8 @@ def how_to_play(s: dict) -> list[tuple[str, str]]:
          "• **🎭 Anonymous**: posts in #anonymous-chat with **no name at all**.\n"
          "• **✉️ Message a state**: opens a **private conversation thread** with that State inside your console. "
          "Type there like a normal chat. They see your messages under your State's name, and you see theirs.\n"
-         "• If your State is destroyed, you keep public chat (your name shows **(destroyed)**) and anonymous "
-         "chat, and gain **#jury**. Your conversation threads and pact channels close."),
+         "• If your State is destroyed, you keep anonymous chat and gain **#jury**. You can still read "
+         "#public-chat but not post there, and your conversation threads and pact channels close."),
 
         ("🤝 Pacts (group chats)",
          f"Pacts are private group chats for alliances (or plots).\n"

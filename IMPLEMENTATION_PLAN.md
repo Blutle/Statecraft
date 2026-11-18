@@ -76,7 +76,7 @@ This extends the spec's example. Fields marked ★ are new.
     "starting_hp": 3,
     "base_range": 2,
     "upgrade_cost": 2,
-    "votes_per_ap": 3
+    "votes_per_ap": 2
   },
   "last_daily_tick": null,                      // ★ ISO date of last 2 PM processing
   "clock_marker": null,                         // ★ scheduler: events run up to this time
