@@ -492,9 +492,9 @@ class Router:
     async def post_announcement(self, d: dict) -> None:
         """#announcements: a card from the referee, with the chosen ping above it
         (pings don't work inside cards)."""
-        ch = self.channel("announcements")
+        ch = self.bot.get_channel(self.svc.server.get("announcements_id") or 0)
         if not ch:
-            await self.admin_log("No #announcements channel: run /admin setup. Announcement not posted.")
+            await self.admin_log("No #announcements channel found: run /admin setup. Announcement not posted.")
             return
         card = discord.Embed(title=f"📢 {d['title']}" if d["title"] else "📢 Announcement",
                              description=d["text"], colour=0xFAA61A)
@@ -1210,7 +1210,7 @@ def register_commands(bot: StatecraftBot) -> None:
         await i.response.defer(ephemeral=True, thinking=True)
         keep = {k: v for k, v in svc.server.items() if k not in ("roles", "channels", "category_id",
                                                                "console_category_id", "info_category_id",
-                                                               "public_chat_webhook_id")}
+                                                               "public_chat_webhook_id", "announcements_id")}
         report = await discord_setup.ensure_server(i.guild, svc.cfg.server_file)
         svc.server = {**discord_setup.load_server(svc.cfg.server_file), **keep}
         svc.save_server()
@@ -1483,7 +1483,7 @@ def register_commands(bot: StatecraftBot) -> None:
         svc.save_server()
         keep = {k: v for k, v in svc.server.items() if k not in ("roles", "channels", "category_id",
                                                                "console_category_id", "info_category_id",
-                                                               "public_chat_webhook_id")}
+                                                               "public_chat_webhook_id", "announcements_id")}
         await discord_setup.ensure_server(guild, svc.cfg.server_file)
         svc.server = {**discord_setup.load_server(svc.cfg.server_file), **keep}
         svc.save_server()

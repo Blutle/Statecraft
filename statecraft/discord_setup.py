@@ -17,6 +17,7 @@ CATEGORY = "Statecraft"                # gameplay channels
 INFO_CATEGORY = "Info"                 # rules, how-to-play, register: at the top; players can collapse it
 CONSOLE_CATEGORY = "Your State"        # a player's own category until the game starts (then the State's name)
 INFO_CHANNELS = {"faq", "rules", "how_to_play", "register"}
+ANNOUNCEMENTS = "announcements"        # the server's existing channel; found by name, never modified
 
 ROLES = {
     # key: (name, colour)
@@ -35,7 +36,6 @@ CHANNELS = {
     "rules": ("rules", "The rules of Statecraft.", "readonly"),
     "how_to_play": ("how-to-play", "How to use the bot: your console, the panel, chat, DMs, and pacts.", "readonly"),
     "register": ("register", "Run /join here to enter the next game. Your state name stays private.", "open"),
-    "announcements": ("announcements", "News from the referee.", "readonly"),
     "game_board": ("game-board", "The current map and every state's public stats.", "readonly"),
     "action_log": ("action-log", "Every move, attack, upgrade, and elimination.", "readonly"),
     "public_chat": ("public-chat", "Messages posted under state names. Post with /say from your console.", "readonly"),
@@ -214,6 +214,27 @@ async def ensure_server(guild: discord.Guild, path: Path, echo=None) -> list[str
     else:
         report.append("found #public-chat webhook")
     data["public_chat_webhook_id"] = hook.id
+
+    # #announcements is the server's own channel, outside Statecraft: /announce
+    # posts there, but setup never moves it or changes its permissions.
+    ours = {category.id, info.id}
+    ann = guild.get_channel(saved.get("announcements_id", 0))
+    if ann is None or ann.category_id in ours:
+        ann = next((c for c in guild.text_channels if c.name == ANNOUNCEMENTS and c.category_id not in ours), None)
+    if ann is None:
+        report.append(f"⚠️ no #{ANNOUNCEMENTS} channel found outside Statecraft: /announce won't work until "
+                      "there is one (then run /admin setup again)")
+    else:
+        data["announcements_id"] = ann.id
+        perms = ann.permissions_for(guild.me)
+        missing = [n for n in ("view_channel", "send_messages", "embed_links", "mention_everyone")
+                   if not getattr(perms, n)]
+        report.append(f"using #{ann.name} for /announce" + (
+            f" ⚠️ but the bot is missing {', '.join(missing)} there" if missing else ""))
+    stray = discord.utils.get(category.text_channels, name=ANNOUNCEMENTS)
+    if stray:
+        report.append(f"⚠️ there's an #{ANNOUNCEMENTS} inside {CATEGORY} that the bot no longer uses; "
+                      "you can delete it")
 
     # Existing consoles and pact copies: bring each player's overwrite up to date
     # (no external apps, reactions, files, or embeds)
