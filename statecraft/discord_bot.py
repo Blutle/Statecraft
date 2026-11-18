@@ -173,7 +173,7 @@ class Router:
         """A "Your State" category with room for one more channel.
 
         Consoles and pact copies share it, so each player sees their console
-        and their pacts together at the top. Discord allows 50 channels per
+        and their pacts together, just below Info. Discord allows 50 channels per
         category; past that the bot adds another "Your State" category, and
         each player only sees the ones holding their own channels. A player's
         pact copies go next to their console when there's room."""

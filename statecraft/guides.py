@@ -137,7 +137,7 @@ def how_to_play(s: dict) -> list[tuple[str, str]]:
     close, fade = _t(s["window_close"]), _t(s["info_expire"])
     return [
         ("👋 How to play on Discord",
-         "Everything happens in your **private console**, a channel only you (and the referee) can see, at the "
+         "Everything happens in your **private console**, a channel only you (and the referee) can see, near the "
          "top of the channel list under **Your State**. Your pact channels appear there too. Nobody "
          "else can tell which console, or which State, is yours.\n\n"
          "This guide covers using the bot. For the game itself, read the rules channel."),

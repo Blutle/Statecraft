@@ -14,8 +14,8 @@ from pathlib import Path
 import discord
 
 CATEGORY = "Statecraft"                # gameplay channels
-INFO_CATEGORY = "Statecraft Info"      # rules, how-to-play, register: players can collapse or hide it
-CONSOLE_CATEGORY = "Your State"        # consoles and pact copies; shown at the top
+INFO_CATEGORY = "Info"                 # rules, how-to-play, register: at the top; players can collapse it
+CONSOLE_CATEGORY = "Your State"        # consoles and pact copies; right below Info
 INFO_CHANNELS = {"rules", "how_to_play", "register"}
 
 ROLES = {
@@ -158,9 +158,9 @@ async def ensure_server(guild: discord.Guild, path: Path, echo=None) -> list[str
     category = await ensure_category("category_id", CATEGORY, "readonly")
     info = await ensure_category("info_category_id", INFO_CATEGORY, "readonly")
     consoles = await ensure_category("console_category_id", CONSOLE_CATEGORY, "hidden")
-    try:                                   # "Your State", then the info channels, then the game
-        await consoles.edit(position=0, reason="Statecraft setup")
-        await info.edit(position=1, reason="Statecraft setup")
+    try:                                   # Info, then "Your State", then the game
+        await info.edit(position=0, reason="Statecraft setup")
+        await consoles.edit(position=1, reason="Statecraft setup")
         await category.edit(position=2, reason="Statecraft setup")
     except discord.HTTPException:
         pass
