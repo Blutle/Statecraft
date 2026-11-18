@@ -314,6 +314,7 @@ class DayAndJuryTests(unittest.TestCase):
 
     def test_vote_bands(self):
         g = make_game(6)
+        g.set_jury_bands(True)
         jurors = ["p3", "p4", "p5", "p6"]
         for pid in jurors:
             g.get(pid).alive = False
@@ -333,12 +334,14 @@ class DayAndJuryTests(unittest.TestCase):
         self.assertEqual(res.events[1].data["withheld"], ["p1"])
         self.assertIn("except Republic of Aldren", res.events[1].public)
 
-    def test_jury_bands_can_be_switched_off(self):
+    def test_jury_bands_are_off_until_turned_on(self):
         g = make_game(3)
+        self.assertEqual(g.jury_effect(4), (2, False))       # default: 1 AP per 2 votes
+        self.assertIn("every", g.jury_rule_text())
+        self.assertTrue(g.set_jury_bands(True).ok)
         self.assertEqual(g.jury_effect(4), (0, True))
         self.assertTrue(g.set_jury_bands(False).ok)
-        self.assertEqual(g.jury_effect(4), (4 // g.s["votes_per_ap"], False))
-        self.assertIn("every", g.jury_rule_text())
+        self.assertEqual(g.jury_effect(3), (1, False))
 
 
 class JuryScoreTests(unittest.TestCase):

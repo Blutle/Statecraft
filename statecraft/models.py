@@ -16,7 +16,7 @@ DEFAULT_SETTINGS = {
     "gift_amount": 1,            # AP moved by one Gift (paid by the giver)
     "daily_ap": 1,
     "votes_per_ap": 2,           # jury_bands off: every N votes = +1 AP
-    "jury_bands": 1,             # 1 = vote bands: exactly jury_reward_votes = +1 AP, more = nothing,
+    "jury_bands": 0,             # off by default (/admin juryrule on). 1 = vote bands: exactly jury_reward_votes = +1 AP, more = nothing,
     "jury_reward_votes": 2,      #     jury_penalty_votes or more = no daily AP that day
     "jury_penalty_votes": 4,     #     (0 = no penalty)
     "board_size": 0,             # 0 = automatic, using board_scale_pct
