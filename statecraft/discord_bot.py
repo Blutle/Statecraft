@@ -50,7 +50,7 @@ def _same_card(msg: discord.Message, card: discord.Embed) -> bool:
     return (old.title == card.title and old.description == card.description
             and (old.colour and old.colour.value) == (card.colour and card.colour.value)
             and old.footer.text == card.footer.text and bool(old.image.url) == bool(card.image.url))
-CHAT_KINDS = {"PUBLIC_CHAT", "ANONYMOUS", "PRIVATE_MESSAGE", "PACT_MESSAGE"}   # no panel refresh needed
+CHAT_KINDS = {"PUBLIC_CHAT", "ANONYMOUS", "PRIVATE_MESSAGE", "PACT_MESSAGE", "ANNOUNCEMENT"}   # no panel refresh
 DIRECTIONS = [app_commands.Choice(name=n, value=v) for n, v in [
     ("North (up)", "n"), ("North-east", "ne"), ("East (right)", "e"), ("South-east", "se"),
     ("South (down)", "s"), ("South-west", "sw"), ("West (left)", "w"), ("North-west", "nw")]]
@@ -100,6 +100,9 @@ class Router:
     async def _deliver_one(self, ev: Event, echo_dm: bool = True) -> None:
         if ev.kind == "PRIVATE_MESSAGE":
             await self.deliver_dm(ev.data["sender"], ev.data["recipient"], ev.data["text"], echo_dm)
+            return
+        if ev.kind == "ANNOUNCEMENT":
+            await self.post_announcement(ev.data)
             return
         if ev.kind == "PUBLIC_CHAT":
             await self.post_as_state(ev.data["state"], ev.data["text"])
@@ -485,6 +488,25 @@ class Router:
                                          ping=not self.svc.muted(recipient, f"dm:{sender}"))
         if echo and not self.svc.is_fake(sender):
             await self.post_in_dm_thread(sender, recipient, text, f"{s_name} (you)")
+
+    async def post_announcement(self, d: dict) -> None:
+        """#announcements: a card from the referee, with the chosen ping above it
+        (pings don't work inside cards)."""
+        ch = self.channel("announcements")
+        if not ch:
+            await self.admin_log("No #announcements channel: run /admin setup. Announcement not posted.")
+            return
+        card = discord.Embed(title=f"📢 {d['title']}" if d["title"] else "📢 Announcement",
+                             description=d["text"], colour=0xFAA61A)
+        rid = self.svc.role_id("players")
+        if d["ping"] == "everyone":
+            await ch.send("@everyone", embed=card, allowed_mentions=discord.AllowedMentions(
+                everyone=True, users=False, roles=False))
+        elif d["ping"] == "players" and rid:
+            await ch.send(f"<@&{rid}>", embed=card, allowed_mentions=discord.AllowedMentions(
+                everyone=False, users=False, roles=[discord.Object(rid)]))
+        else:
+            await ch.send(embed=card, allowed_mentions=NO_PINGS)
 
     async def post_as_state(self, state_name: str, text: str) -> None:
         hook = await self.bot.public_chat_webhook()
@@ -1244,6 +1266,29 @@ def register_commands(bot: StatecraftBot) -> None:
         tid, err = ui.resolve(state, admin=True)
         await ui.reply(i, await svc.run(lambda g, now: g.give_ap(tid, amount)) if tid else Result.fail(err),
                        ephemeral=True)
+
+    class AnnounceModal(discord.ui.Modal, title="Post in #announcements"):
+        heading = discord.ui.TextInput(label="Title (optional)", required=False, max_length=200)
+        body = discord.ui.TextInput(label="Message", style=discord.TextStyle.paragraph, max_length=3500)
+
+        def __init__(self, ping: str):
+            super().__init__()
+            self.ping = ping
+
+        async def on_submit(self, mi: discord.Interaction):
+            text, title, ping = str(self.body.value), str(self.heading.value), self.ping
+            await ui.reply(mi, await svc.run(lambda g, now: g.announce(text, title, ping)), ephemeral=True)
+
+    @tree.command(description="Referee: post an announcement in #announcements")
+    @app_commands.default_permissions(manage_guild=True)
+    @app_commands.choices(ping=[app_commands.Choice(name="Players (default)", value="players"),
+                                app_commands.Choice(name="@everyone", value="everyone"),
+                                app_commands.Choice(name="No ping", value="none")])
+    @app_commands.describe(ping="Who gets notified (default: the Statecraft-Players role)")
+    async def announce(i: discord.Interaction, ping: app_commands.Choice[str] | None = None):
+        if not await admin_only(i):
+            return
+        await i.response.send_modal(AnnounceModal(ping.value if ping else "players"))
 
     @admin.command(description="Set everyone's action cooldown, in seconds (the normal game uses 900 = 15 minutes)")
     @app_commands.describe(seconds="e.g. 30 for a quick test; 900 puts the normal 15 minutes back")

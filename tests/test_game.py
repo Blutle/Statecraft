@@ -453,6 +453,20 @@ class HistoryTests(unittest.TestCase):
             self.assertTrue(h.path.name.endswith(".history.jsonl"))
 
 
+class AnnouncementTests(unittest.TestCase):
+    def test_announce_is_logged_and_validated(self):
+        records = []
+        g = Game(rng=random.Random(1), recorder=records.append)     # works before the game starts too
+        res = g.announce("  Game starts Friday at 2 PM!  ", "Schedule")
+        self.assertTrue(res.ok)
+        ev = res.events[0]
+        self.assertEqual((ev.kind, ev.data["text"], ev.data["ping"]), ("ANNOUNCEMENT", "Game starts Friday at 2 PM!", "players"))
+        self.assertEqual(records[-1]["action"], "admin_announce")
+        self.assertFalse(g.announce("   ").ok)
+        self.assertFalse(g.announce("x" * 3501).ok)
+        self.assertFalse(g.announce("hi", ping="admins").ok)
+
+
 class JurorSocialTests(unittest.TestCase):
     def test_jurors_keep_anonymous_chat_only(self):
         g = make_game(3)

@@ -35,6 +35,7 @@ CHANNELS = {
     "rules": ("rules", "The rules of Statecraft.", "readonly"),
     "how_to_play": ("how-to-play", "How to use the bot: your console, the panel, chat, DMs, and pacts.", "readonly"),
     "register": ("register", "Run /join here to enter the next game. Your state name stays private.", "open"),
+    "announcements": ("announcements", "News from the referee.", "readonly"),
     "game_board": ("game-board", "The current map and every state's public stats.", "readonly"),
     "action_log": ("action-log", "Every move, attack, upgrade, and elimination.", "readonly"),
     "public_chat": ("public-chat", "Messages posted under state names. Post with /say from your console.", "readonly"),

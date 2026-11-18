@@ -961,6 +961,20 @@ class Game:
         return Result(True, "Posted anonymously to #anonymous-chat.",
                       [Event("ANONYMOUS", public=f"Anonymous: {text}", data={"text": text})])
 
+    @recorded("admin_announce")
+    def announce(self, text: str, title: str = "", ping: str = "players") -> Result:
+        """A referee announcement for #announcements. Works in any phase."""
+        text, title = text.strip(), " ".join(title.split())
+        if not text:
+            return Result.fail("The announcement is empty.")
+        if len(text) > 3500 or len(title) > 200:
+            return Result.fail("Announcements are limited to 3,500 characters (titles to 200).")
+        if ping not in ("players", "everyone", "none"):
+            return Result.fail("Unknown ping option.")
+        return self._done(Result(True, "Announcement posted.", [Event(
+            "ANNOUNCEMENT", public=f"Announcement: {title + ': ' if title else ''}{text}",
+            data={"title": title, "text": text, "ping": ping})]))
+
     # ------------------------------------------------------------------ pacts
     # Anonymous group chats. The engine owns membership and logs every
     # message; the interface gives each member a private copy of the pact
