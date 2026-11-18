@@ -1182,13 +1182,23 @@ def register_commands(bot: StatecraftBot) -> None:
             return
         await ui.reply(i, await svc.run(lambda g, now: g.set_cooldown(seconds)), ephemeral=True)
 
-    @admin.command(description="Jury vote bands on (2 votes = +1 AP, 3 = nothing, 4+ = no daily AP) or off")
-    @app_commands.choices(setting=[app_commands.Choice(name="on", value="on"),
-                                   app_commands.Choice(name="off", value="off")])
-    async def juryrule(i: discord.Interaction, setting: app_commands.Choice[str]):
+    @admin.command(description="How jury votes turn into AP: votes per AP, the per-State limit, or vote bands")
+    @app_commands.choices(bands=[app_commands.Choice(name="on", value="on"),
+                                 app_commands.Choice(name="off", value="off")])
+    @app_commands.describe(votes_per_ap="Votes needed for each +1 AP (default 2)",
+                           max_award="Most AP the Jury can give one State per day (default 2; 0 = no limit)",
+                           bands="Vote bands: exactly 2 votes = +1 AP, 3 = nothing, 4+ = no daily AP (default off)")
+    async def juryrule(i: discord.Interaction, votes_per_ap: app_commands.Range[int, 1, 20] | None = None,
+                       max_award: app_commands.Range[int, 0, 20] | None = None,
+                       bands: app_commands.Choice[str] | None = None):
         if not await admin_only(i):
             return
-        await ui.reply(i, await svc.run(lambda g, now: g.set_jury_bands(setting.value == "on")), ephemeral=True)
+        if votes_per_ap is None and max_award is None and bands is None:
+            await i.response.send_message(f"Current Jury rule: {svc.game.jury_rule_text()}", ephemeral=True)
+            return
+        on = None if bands is None else bands.value == "on"
+        await ui.reply(i, await svc.run(lambda g, now: g.set_jury_rule(on, votes_per_ap, max_award)),
+                       ephemeral=True)
 
     @admin.command(description="Edit any stored value of a State: name, abbreviation, AP, HP, Influence, position...")
     @app_commands.autocomplete(state=any_states)

@@ -20,7 +20,10 @@ def _t(hhmm: str) -> str:
 
 def _jury_rule(s: dict) -> str:
     if not s["jury_bands"]:
-        return f"Every full **{s['votes_per_ap']} votes** a State received gives it **+1 AP**."
+        text = f"Every full **{s['votes_per_ap']} votes** a State received gives it **+1 AP**"
+        if s["jury_max_award"]:
+            text += f", up to **+{s['jury_max_award']} AP** per day"
+        return text + "."
     r, p = s["jury_reward_votes"], s["jury_penalty_votes"]
     text = f"A State that received **exactly {r} votes** gets **+1 AP**. "
     if p:

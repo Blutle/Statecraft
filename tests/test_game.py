@@ -343,6 +343,17 @@ class DayAndJuryTests(unittest.TestCase):
         self.assertTrue(g.set_jury_bands(False).ok)
         self.assertEqual(g.jury_effect(3), (1, False))
 
+    def test_jury_award_limit_and_admin_rule(self):
+        g = make_game(3)
+        self.assertEqual(g.jury_effect(10), (2, False))      # 5 AP earned, capped at 2 by default
+        self.assertTrue(g.set_jury_rule(votes_per_ap=3, max_award=0).ok)
+        self.assertEqual(g.jury_effect(10), (3, False))      # no limit
+        self.assertIn("every 3 votes", g.jury_rule_text())
+        self.assertFalse(g.set_jury_rule(votes_per_ap=3).ok)  # nothing changed
+        self.assertFalse(g.set_jury_rule(votes_per_ap=0).ok)
+        res = g.set_jury_rule(max_award=1)
+        self.assertIn("up to +1 AP per day", res.events[0].public)
+
 
 class JuryScoreTests(unittest.TestCase):
     def test_scores_rank_votes_for_winner(self):

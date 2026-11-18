@@ -230,7 +230,7 @@ def action_card(ev, game: Game, now: datetime | None = None) -> discord.Embed:
     elif k == "ADMIN_EDIT":
         emb.description = f"🛠️ Referee adjustment: {ev.public.split(': ', 1)[-1]}"
     elif k == "SETTING":
-        if d.get("setting") == "jury_bands":
+        if d.get("setting") in ("jury_rule", "jury_bands"):
             emb.description = f"🗳️ The referee changed the Jury rule: {d['text']}"
         else:
             emb.description = f"⏱️ The referee set the action cooldown to **{d['text']}**"

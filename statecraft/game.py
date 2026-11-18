@@ -604,26 +604,49 @@ class Game:
         +1 AP, a few more gives nothing, and jury_penalty_votes or more
         costs the State its daily AP. So jurors have to coordinate, and one
         secret extra vote can turn a reward into a punishment. With bands
-        off: every votes_per_ap votes gives +1 AP."""
+        off: every votes_per_ap votes gives +1 AP, up to jury_max_award."""
         s = self.s
         if not s["jury_bands"]:
-            return votes // s["votes_per_ap"], False
+            bonus = votes // s["votes_per_ap"]
+            if s["jury_max_award"]:
+                bonus = min(bonus, s["jury_max_award"])
+            return bonus, False
         if s["jury_penalty_votes"] and votes >= s["jury_penalty_votes"]:
             return 0, True
         return (1 if votes == s["jury_reward_votes"] else 0), False
 
-    @recorded("admin_set_jury_bands")
-    def set_jury_bands(self, on: bool) -> Result:
-        self.s["jury_bands"] = 1 if on else 0
+    @recorded("admin_set_jury_rule")
+    def set_jury_rule(self, bands: bool | None = None, votes_per_ap: int | None = None,
+                      max_award: int | None = None) -> Result:
+        """Change how jury votes turn into AP. Each argument left as None is unchanged."""
+        if votes_per_ap is not None and not 1 <= votes_per_ap <= 20:
+            return Result.fail("Votes per AP must be between 1 and 20.")
+        if max_award is not None and not 0 <= max_award <= 20:
+            return Result.fail("The award limit must be between 0 (no limit) and 20.")
+        before = self.jury_rule_text()
+        if bands is not None:
+            self.s["jury_bands"] = 1 if bands else 0
+        if votes_per_ap is not None:
+            self.s["votes_per_ap"] = votes_per_ap
+        if max_award is not None:
+            self.s["jury_max_award"] = max_award
         text = self.jury_rule_text()
+        if text == before:
+            return Result.fail(f"The Jury rule is already: {text}")
         return self._done(Result(True, f"[Admin] Jury rule: {text}", [
             Event("SETTING", public=f"The referee changed the Jury rule: {text}",
-                  data={"setting": "jury_bands", "on": bool(on), "text": text})]))
+                  data={"setting": "jury_rule", "text": text})]))
+
+    def set_jury_bands(self, on: bool) -> Result:
+        return self.set_jury_rule(bands=on)
 
     def jury_rule_text(self) -> str:
         s = self.s
         if not s["jury_bands"]:
-            return f"every {s['votes_per_ap']} votes a State receives give it +1 AP."
+            text = f"every {s['votes_per_ap']} votes a State receives give it +1 AP"
+            if s["jury_max_award"]:
+                text += f", up to +{s['jury_max_award']} AP per day"
+            return text + "."
         text = f"exactly {s['jury_reward_votes']} votes give a State +1 AP, more give nothing"
         if s["jury_penalty_votes"]:
             text += f", and {s['jury_penalty_votes']} or more cost it its daily AP"
