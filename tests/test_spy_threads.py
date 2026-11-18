@@ -106,6 +106,25 @@ class SpyThreadTests(unittest.TestCase):
         self.assertEqual(registry[threads["102"]].members, {102})
 
 
+class JurorDMThreadTests(unittest.TestCase):
+    def test_destruction_closes_conversation_threads(self):
+        g, svc, registry, router = setup()
+        mine, theirs, other = FakeThread(1, "↔ Kesh"), FakeThread(2, "↔ Westhaven"), FakeThread(3, "↔ VE")
+        for th, owner in ((mine, 100), (theirs, 102), (other, 101)):
+            th.members.add(owner)
+            registry[th.id] = th
+        svc.server["dm_threads"] = {"100": {"102": 1}, "102": {"100": 2, "101": 3}}
+        svc.set_dm_thread = lambda o, t, tid: GameService.set_dm_thread(svc, o, t, tid)
+        asyncio.run(router.close_dm_threads("100"))                    # Westhaven is destroyed
+        self.assertEqual(mine.members, set())                          # its own thread leaves its console
+        self.assertTrue(mine.archived)
+        self.assertEqual(svc.server["dm_threads"]["100"], {})
+        self.assertIn("destroyed", theirs.sent[-1][0])                 # Kesh keeps its copy, with a note
+        self.assertEqual(theirs.members, {102})
+        self.assertEqual(svc.server["dm_threads"]["102"], {"100": 2, "101": 3})
+        self.assertEqual(other.sent, [])                               # unrelated conversations untouched
+
+
 class YourStateCategoryTests(unittest.TestCase):
     """Consoles and pact copies share "Your State"; a full category overflows into another."""
 

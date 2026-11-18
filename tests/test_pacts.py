@@ -91,13 +91,45 @@ class PactTests(unittest.TestCase):
         self.assertFalse(g.respond_to_pact("9", pact, True).ok)
         self.assertFalse(g.create_pact("9", "Mine").ok)
 
-    def test_jurors_keep_pacts_and_game_end_closes_them(self):
+    def test_game_end_closes_pacts(self):
         g = game()
         pact = g.create_pact("0", "Accord").events[0].data["pact"]
-        g.get("0").alive = False
-        self.assertTrue(g.pact_message("0", pact, "the jury speaks").ok)
+        self.assertTrue(g.pact_message("0", pact, "still going").ok)
         g.declare_winners(["1"])
         self.assertFalse(g.pact_message("0", pact, "too late").ok)
+
+    def test_destruction_removes_a_state_from_its_pacts(self):
+        g = game()
+        accord = g.create_pact("0", "Accord").events[0].data["pact"]
+        solo = g.create_pact("2", "Solo").events[0].data["pact"]
+        for m in ("1", "2"):
+            g.invite_to_pact("0", accord, m)
+        g.respond_to_pact("1", accord, True)                           # "2" still has a pending invite
+        for p in g.state.players.values():
+            p.ap = 9
+        a, b = g.get("1"), g.get("0")                                  # "1" attacks founder "0" to death
+        a.x, a.y, b.x, b.y = 0, 0, 1, 0
+        b.hp = 1
+        res = g.attack("1", "0")
+        self.assertTrue(res.ok, res.message)
+        self.assertEqual(g.pact(accord)["invites"], ["2"])              # a living invitee keeps theirs
+        left =[e for e in res.events if e.kind == "PACT_LEFT"]
+        self.assertEqual([e.data["member"] for e in left], ["0"])
+        self.assertTrue(left[0].data["destroyed"])
+        self.assertEqual(left[0].data["new_founder"], "1")             # founding passes on
+        self.assertEqual(g.pact(accord)["members"], ["1"])
+        self.assertEqual(g.pacts_of("0"), [])
+        self.assertTrue(g.pact(solo))                                   # other pacts untouched
+        self.assertFalse(g.create_pact("0", "Ghosts").ok)               # jurors can't use pacts
+        self.assertFalse(g.invite_to_pact("1", accord, "0").ok)         # or be invited back
+
+    def test_destruction_withdraws_pending_invites(self):
+        g = game()
+        pact = g.create_pact("0", "Accord").events[0].data["pact"]
+        g.invite_to_pact("0", pact, "1")
+        g.admin_edit("1", "hp", "0")                                    # destroyed by the referee
+        self.assertEqual(g.pact(pact)["invites"], [])
+        self.assertFalse(g.respond_to_pact("1", pact, True).ok)
 
     def test_names_and_text_validated(self):
         g = game()

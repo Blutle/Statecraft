@@ -400,20 +400,40 @@ class Game:
             ))
         else:
             t.hp = 0
-            t.alive = False
-            t.eliminated_on_day = self.state.day
-            if t.id in self.state.info_access:      # death ends purchased info access
-                self.state.info_access.remove(t.id)
+            events += self._destroy(t)
             events.append(Event(
                 "ELIMINATION",
                 data={"victim": t.id, "attacker": p.id},
                 public=(f"{p.state_name} attacked {t.state_name}, destroying it! "
                         f"{t.state_name} was controlled by {t.owner_name}, who now joins the Jury."),
-                private={t.id: "Your state has been destroyed. You are now on the Jury and can vote each night."},
+                private={t.id: self.DESTROYED_NOTE},
                 ping="mandatory",
             ))
             events += self._check_victory()
         return self._done(Result(True, f"Hit {t.state_name}. AP left: {p.ap}.", events))
+
+    DESTROYED_NOTE = ("Your state has been destroyed. You are now on the Jury and can vote each night. "
+                      "Your pacts and private conversations have closed; you can still post in "
+                      "#public-chat, #anonymous-chat, and #jury.")
+
+    def _destroy(self, p: Player) -> list[Event]:
+        """Mark a State destroyed. Its controller joins the Jury: they keep
+        public chat, anonymous chat, and the jury chat, but lose private
+        correspondence, so they're taken out of every pact and their pending
+        pact invitations are withdrawn. (Private messages are refused in dm().)"""
+        p.alive = False
+        p.eliminated_on_day = self.state.day
+        if p.id in self.state.info_access:          # death ends purchased info access
+            self.state.info_access.remove(p.id)
+        events = []
+        for pc in self.state.pacts.values():
+            if pc["active"] and p.id in pc["invites"]:
+                pc["invites"].remove(p.id)
+        for pc in self.pacts_of(p.id):
+            ev = self._remove_from_pact(pc, p.id, "PACT_LEFT")
+            ev.data["destroyed"] = True
+            events.append(ev)
+        return events
 
     def _check_victory(self) -> list[Event]:
         alive = self.alive_players()
@@ -759,15 +779,12 @@ class Game:
             was_alive = p.alive
             p.hp = n
             if n == 0 and was_alive:                    # destroyed by the referee
-                p.alive = False
-                p.eliminated_on_day = self.state.day
-                if p.id in self.state.info_access:
-                    self.state.info_access.remove(p.id)
+                extra += self._destroy(p)
                 extra.append(Event(
                     "ELIMINATION",
                     public=(f"{p.state_name} has been destroyed by the referee. It was controlled by "
                             f"{p.owner_name}, who now joins the Jury."),
-                    private={p.id: "Your state has been destroyed. You are now on the Jury and can vote each night."},
+                    private={p.id: self.DESTROYED_NOTE},
                     ping="mandatory", data={"victim": p.id, "attacker": None}))
                 extra += self._check_victory()
             elif n > 0 and not was_alive:               # revived by the referee
@@ -827,8 +844,8 @@ class Game:
 
     @recorded("say")
     def say(self, pid: str, text: str) -> Result:
-        """Post to #public-chat under the state's name. Eliminated players
-        keep full social access (they only gain the jury chat)."""
+        """Post to #public-chat under the state's name. Destroyed States can
+        still post; "(destroyed)" is added to their name."""
         p = self.get(pid)
         if not p:
             return Result.fail("You are not a player in this game.")
@@ -837,8 +854,9 @@ class Game:
         text, err = self._message_text(text)
         if err:
             return Result.fail(err)
+        name = p.state_name if p.alive else f"{p.state_name} (destroyed)"
         return Result(True, "Posted to #public-chat.", [Event(
-            "PUBLIC_CHAT", public=f"{p.state_name}: {text}", data={"sender": p.id, "state": p.state_name, "text": text})])
+            "PUBLIC_CHAT", public=f"{name}: {text}", data={"sender": p.id, "state": name, "text": text})])
 
     @recorded("dm")
     def dm(self, pid: str, tid: str, text: str) -> Result:
@@ -852,6 +870,11 @@ class Game:
             return Result.fail("No such state.")
         if t.id == p.id:
             return Result.fail("You can't message yourself.")
+        if not p.alive:
+            return Result.fail("Destroyed States can't send private messages. You can still post in "
+                               "#public-chat, #anonymous-chat, and #jury.")
+        if not t.alive:
+            return Result.fail(f"{t.state_name} has been destroyed and can't receive private messages.")
         text, err = self._message_text(text)
         if err:
             return Result.fail(err)
@@ -893,6 +916,8 @@ class Game:
             return None, "Pacts open when the game starts."
         if self.state.phase == "ended":
             return None, "The game is over."
+        if not p.alive:
+            return None, "Destroyed States can't use pacts."
         return p, ""
 
     @recorded("pact_create")
@@ -931,6 +956,8 @@ class Game:
         t = self.get(tid)
         if not t or t.id == pid:
             return Result.fail("No such state.")
+        if not t.alive:
+            return Result.fail(f"{t.state_name} has been destroyed and can't join pacts.")
         if tid in pc["members"]:
             return Result.fail(f"{t.state_name} is already in {pc['name']}.")
         if tid in pc["invites"]:

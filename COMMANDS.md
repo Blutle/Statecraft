@@ -106,19 +106,25 @@ Each action is allowed only **2:00–8:00 PM Central** and starts your **15-minu
 
 ## Communication (console only, free, any time, no cooldown)
 
-Available to living **and** eliminated players. Players are told that everything is logged for the post-game summary, including the real author of anonymous posts.
+Players are told that everything is logged for the post-game summary, including the real author of anonymous posts.
 
 | Command | What it does |
 |---|---|
-| `/say message:<text>` | Posts in #public-chat under your **state name** (via the webhook). |
-| `/dm state:<state> message:<text>` | Sends a private message to another state. It appears in your conversation thread with them, and in theirs with you, under your state name. |
+| `/say message:<text>` | Posts in #public-chat under your **state name** (via the webhook). A destroyed state's name shows as "*Name* (destroyed)". |
+| `/dm state:<state> message:<text>` | Sends a private message to another **surviving** state. It appears in your conversation thread with them, and in theirs with you, under your state name. |
+| `/anon message:<text>` | Posts in #anonymous-chat with no name at all. |
+
+**Jurors lose private correspondence.** A destroyed state keeps `/say`, `/anon`, and #jury, so the Jury still follows the game, but it can't send or receive private messages or use pacts:
+- Its own conversation threads are removed from its console. The other side keeps its copy to read back, with a closing note, and anything typed there is refused.
+- It is removed from every pact (the other members are told it was destroyed), and its pending invitations are withdrawn.
+- The panel drops **Message a state** and **Pacts** for jurors.
+- If the referee revives a state, it can message again in fresh threads, but it isn't put back into its old pacts.
 
 **Conversation threads:**
 - Each pair of states talks in a private thread inside each player's console, such as `↔ Veyran Empire`, visible only to that player, the bot, and the admin.
 - **Typing:** type in the thread and the bot relays it to the other player's matching thread under your state name. A message sent with `/dm` shows up in your own thread as "*Your State* (you)".
 - **Limits:** threads don't count toward Discord's 500-channel limit. Quiet threads archive after a week and reopen when a new message arrives.
 - **Logging:** every message is in the history log.
-| `/anon message:<text>` | Posts in #anonymous-chat with no name at all. |
 
 ## Pacts: private group chats (console commands; you chat in pact channels)
 
@@ -137,8 +143,8 @@ Pacts let players form anonymous group chats, such as alliances, by inviting oth
 **On the panel:** the **Pacts** button shows the same summary, with **Found a pact**, **Invite a state**, **Remove a member**, and **Leave a pact** buttons. Each opens a menu, and removing or leaving asks Yes/Cancel. Invitations arrive in your console with **Accept** / **Decline** buttons.
 
 **Rules:**
-- Pacts cost nothing, have no cooldown, and are open at all hours, including to eliminated players (jurors keep full social access).
-- A destroyed state stays in its pacts unless it leaves or is kicked.
+- Pacts cost nothing, have no cooldown, and are open at all hours, but only to surviving states.
+- A destroyed state is removed from all its pacts at once (if it founded one, founding passes on as if it had left), and it can't be invited.
 - Every relayed message is in the history log.
 - Text only to start. Edits and deletions are not relayed, and the log keeps the original.
 - If a founder leaves, founding (and the ability to invite) passes to the longest-standing member. The pact still counts toward the original founder's limit of 3.
@@ -209,7 +215,7 @@ These let one person run a full game alone on the test server. They are disabled
 | 8:15 PM | Ends Spy access and notifies the Spies. |
 | Every public game event | Posts a short card in **#action-log**: an icon and one or two lines, with each state shown as **Name** `ABC`. Attacks show hearts for the HP left. Eliminations, the day start, and jury results each have their own card, and the game start is a roster card. Role pings sit on the line above the card, because pings don't work inside cards. |
 | After **every** visible action | Updates the #game-board message in place: the map plus the public stats table (HP, Influence, position, status). Each marker shows its state's Influence number so reach can be judged at a glance. The message has the same **"Show Influence for…" dropdown**, and picking a state shows the highlighted board **privately** to whoever picked it, so nobody's choice is visible. Gifts aren't visible, so they don't trigger an update. |
-| On elimination | Reveals the owner, grants `@Statecraft-Jury` (and access to #jury), and posts in #action-log. |
+| On elimination | Reveals the owner, grants `@Statecraft-Jury` (and access to #jury), posts in #action-log, removes the state from its pacts, and closes its conversation threads. |
 | At game end | Announces the winner(s) and reveals their owners. |
 
 ## The board image

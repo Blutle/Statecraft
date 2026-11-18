@@ -412,15 +412,18 @@ class HistoryTests(unittest.TestCase):
 
 
 class JurorSocialTests(unittest.TestCase):
-    def test_eliminated_players_keep_social_access(self):
+    def test_jurors_keep_public_chat_but_lose_private_messages(self):
         g = make_game(3)
         g.get("p3").alive, g.get("p3").hp = False, 0
-        self.assertTrue(g.say("p3", "The jury remembers.").ok)
-        self.assertTrue(g.dm("p3", "p1", "I'm voting for you").ok)
-        self.assertTrue(g.dm("p1", "p3", "thanks").ok)       # living can message jurors
+        res = g.say("p3", "The jury remembers.")
+        self.assertTrue(res.ok)
+        name = g.get("p3").state_name
+        self.assertEqual(res.events[0].data["state"], f"{name} (destroyed)")   # marked in #public-chat
+        self.assertEqual(g.say("p1", "hi").events[0].data["state"], g.get("p1").state_name)
         self.assertTrue(g.anon("p3", "psst").ok)
-        self.assertFalse(g.dm("p3", "p3", "me").ok)
-        self.assertFalse(g.move("p3", "n").ok)               # but still no gameplay
+        self.assertFalse(g.dm("p3", "p1", "I'm voting for you").ok)   # no private correspondence
+        self.assertIn("destroyed", g.dm("p1", "p3", "thanks").message)  # either way
+        self.assertFalse(g.move("p3", "n").ok)                         # and no gameplay
 
 
 class StoreTests(unittest.TestCase):

@@ -132,6 +132,7 @@ class Router:
 
         if ev.kind == "ELIMINATION":
             await self.grant_role(ev.data["victim"], "jury")
+            await self.close_dm_threads(ev.data["victim"])
         if ev.kind == "REVIVED":
             await self.revoke_role(ev.data["pid"], "jury")
         if ev.kind == "ADMIN_EDIT" and ev.data["field"] == "name":
@@ -159,7 +160,8 @@ class Router:
         await self.remove_pact_copy(pact_id, d["member"])
         if d["dissolved"]:
             return
-        verb = "left the pact" if ev.kind == "PACT_LEFT" else "was removed from the pact"
+        verb = ("was destroyed and has left the pact" if d.get("destroyed") else
+                "left the pact" if ev.kind == "PACT_LEFT" else "was removed from the pact")
         note = f"**{who}** {verb}."
         if d["new_founder"]:
             note += f" **{game.get(d['new_founder']).state_name}** is now the founder."
@@ -453,6 +455,32 @@ class Router:
             await member.remove_roles(discord.Object(rid), reason="Statecraft")
         except (discord.NotFound, ValueError):
             pass
+
+    async def close_dm_threads(self, pid: str) -> None:
+        """A destroyed State loses its private conversations. Its own threads
+        are removed from its console (like its pact channels); the other side
+        keeps theirs to read back, with a closing note (anything they type
+        there is refused). The destroyed side's threads are forgotten, so if
+        the referee revives the State it starts fresh conversations."""
+        name = self.svc.game.get(pid).state_name
+        for owner, threads in list(self.svc.server.get("dm_threads", {}).items()):
+            for other, tid in list(threads.items()):
+                if pid not in (owner, other):
+                    continue
+                if owner == pid:
+                    self.svc.set_dm_thread(owner, other, None)
+                th = await self._thread(tid)
+                if not th:
+                    continue
+                try:
+                    if owner == pid:
+                        await th.remove_user(discord.Object(int(owner)))
+                    else:
+                        await th.send(f"*{name} has been destroyed. This conversation is closed.*",
+                                      allowed_mentions=NO_PINGS)
+                    await th.edit(archived=True)
+                except discord.HTTPException:
+                    pass
 
     async def rename_dm_threads(self, pid: str) -> None:
         """After a referee rename, retitle other players' conversation threads with this state."""
@@ -940,7 +968,7 @@ def register_commands(bot: StatecraftBot) -> None:
             await ui.reply(i, await svc.run(lambda g, now: g.say(pid, message)))
 
     @tree.command(description="Send a private message to another state")
-    @app_commands.autocomplete(state=any_states)
+    @app_commands.autocomplete(state=alive_states)
     async def dm(i: discord.Interaction, state: str, message: app_commands.Range[str, 1, 1500]):
         if pid := await ui.console_pid(i):
             tid, err = ui.resolve(state)

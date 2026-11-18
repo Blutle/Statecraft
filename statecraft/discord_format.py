@@ -27,8 +27,8 @@ HELP = """**Statecraft**: use the **control panel** at the bottom of your consol
 **Actions** (2:00-8:00 PM Central, 15-minute cooldown after each, always confirmed first):
 Move 1 AP · Attack 1 AP · Upgrade Influence 2 AP (+1) · Gift 1 AP (give it to a State within your Influence) · Spy 1 AP (today's Gift log until 8:15 PM)
 **Info** (free, any time): `/status` (you, or any State) · `/board` · `/spylog` · `/help` · `/panel` (re-post your panel)
-**Talk** (free, any time, works after elimination too): `/say` (#public-chat, under your state name) · `/dm` (another state's console) · `/anon` (#anonymous-chat, no name)
-**Jury** (after elimination): `/vote` 8:00 PM-1:45 PM, secret, changeable until the lock
+**Talk** (free, any time): `/say` (#public-chat, under your state name) · `/dm` (another state's console) · `/anon` (#anonymous-chat, no name)
+**Jury** (after elimination): `/vote` 8:00 PM-1:45 PM, secret, changeable until the lock. Jurors keep `/say` (shown as "(destroyed)"), `/anon`, and #jury, but lose private messages and pacts
 **Pings**: `/notify on|off` for minor events (moves, upgrades, info purchases); add `chat:` to mute or unmute one pact or conversation
 
 Influence: a straight step counts 1, a diagonal step counts 2. Everything you send the bot is logged for the post-game summary."""
