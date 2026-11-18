@@ -130,7 +130,11 @@ def faq(s: dict, register_ch: str = "#register", rules_ch: str = "#rules",
         ("What is this?",
          "A game of diplomacy and betrayal played entirely through Discord, on your phone. Everyone secretly "
          "controls a State on a shared map, and nobody knows who's behind which one. Make alliances, break them, "
-         "and be the last State standing."),
+         "and be the last State standing.\n"
+         "It's based largely on **Tank Turn Tactics**, a game Luke Muscat made at Halfbrick Studios (the studio "
+         "behind Fruit Ninja). It caused so much drama among the staff that the studio banned it from the office "
+         "after about a week. His GDC talk about it is a fun watch: "
+         "[The Prototype that was Banned from Halfbrick](https://gdcvault.com/play/1017744)."),
         ("How much of a time commitment is this?",
          "You can put as little or as much time into politics as you want, but the actual active playtime per day "
          f"is anywhere from thirty seconds to a few minutes. You get {ap} action point{'s' if ap != 1 else ''} a "
@@ -143,10 +147,11 @@ def faq(s: dict, register_ch: str = "#register", rules_ch: str = "#rules",
          "No. You play as your State, and nobody can see which State is yours unless it's destroyed or the game "
          "ends."),
         ("What if I miss a day?",
-         "Nothing bad happens. Your action points save up, so you can take your turn tomorrow."),
+         "Nothing bad happens. Your action points save up, so you can take your turn tomorrow. (Unless you made "
+         "some enemies, then you might find yourself on the Jury.)"),
         ("What happens if I get knocked out?",
-         "You join the Jury, which votes every night to give bonus action points to surviving States. Getting "
-         "knocked out doesn't take you out of the game."),
+         "You join the Jury, which votes every night to give bonus action points to surviving States. You can "
+         "still influence the game, even once you're knocked out."),
         ("How long does a game last?",
          "I'm expecting a week or so, but it could be more or less depending on how people play."),
         ("Is there a prize?",
