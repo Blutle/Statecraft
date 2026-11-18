@@ -1,0 +1,15 @@
+[Unit]
+Description=Statecraft Discord bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=statecraft
+WorkingDirectory=/opt/statecraft
+ExecStart=/opt/statecraft/.venv/bin/python -m statecraft.discord_bot
+Restart=always
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

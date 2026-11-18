@@ -11,6 +11,7 @@ game.json.bak
 server.json
 server.json.tmp
 board.png
+backups/
 
 # Secrets (Discord token, later)
 .env
