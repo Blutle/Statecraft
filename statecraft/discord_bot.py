@@ -1119,7 +1119,8 @@ def register_commands(bot: StatecraftBot) -> None:
             return
         await i.response.defer(ephemeral=True, thinking=True)
         keep = {k: v for k, v in svc.server.items() if k not in ("roles", "channels", "category_id",
-                                                               "console_category_id", "public_chat_webhook_id")}
+                                                               "console_category_id", "info_category_id",
+                                                               "public_chat_webhook_id")}
         report = await discord_setup.ensure_server(i.guild, svc.cfg.server_file)
         svc.server = {**discord_setup.load_server(svc.cfg.server_file), **keep}
         svc.save_server()
@@ -1367,7 +1368,8 @@ def register_commands(bot: StatecraftBot) -> None:
         svc.server.pop("public_chat_webhook_id", None)
         svc.save_server()
         keep = {k: v for k, v in svc.server.items() if k not in ("roles", "channels", "category_id",
-                                                               "console_category_id", "public_chat_webhook_id")}
+                                                               "console_category_id", "info_category_id",
+                                                               "public_chat_webhook_id")}
         await discord_setup.ensure_server(guild, svc.cfg.server_file)
         svc.server = {**discord_setup.load_server(svc.cfg.server_file), **keep}
         svc.save_server()

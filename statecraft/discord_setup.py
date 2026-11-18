@@ -13,8 +13,10 @@ from pathlib import Path
 
 import discord
 
-CATEGORY = "Statecraft"
+CATEGORY = "Statecraft"                # gameplay channels
+INFO_CATEGORY = "Statecraft Info"      # rules, how-to-play, register: players can collapse or hide it
 CONSOLE_CATEGORY = "Your State"        # consoles and pact copies; shown at the top
+INFO_CHANNELS = {"rules", "how_to_play", "register"}
 
 ROLES = {
     # key: (name, colour)
@@ -154,23 +156,28 @@ async def ensure_server(guild: discord.Guild, path: Path, echo=None) -> list[str
         return cat
 
     category = await ensure_category("category_id", CATEGORY, "readonly")
+    info = await ensure_category("info_category_id", INFO_CATEGORY, "readonly")
     consoles = await ensure_category("console_category_id", CONSOLE_CATEGORY, "hidden")
-    try:                                   # "Your State" sits at the top of the channel list
+    try:                                   # "Your State", then the info channels, then the game
         await consoles.edit(position=0, reason="Statecraft setup")
+        await info.edit(position=1, reason="Statecraft setup")
+        await category.edit(position=2, reason="Statecraft setup")
     except discord.HTTPException:
         pass
 
     # Channels
     channels: dict[str, discord.TextChannel] = {}
     for key, (name, topic, access) in CHANNELS.items():
+        home = info if key in INFO_CHANNELS else category
         ch = guild.get_channel(saved.get("channels", {}).get(key, 0)) \
+            or discord.utils.get(home.text_channels, name=name) \
             or discord.utils.get(category.text_channels, name=name)
         ow = _overwrites(guild, access, roles)
         if ch is None:
-            ch = await category.create_text_channel(name, topic=topic, overwrites=ow, reason="Statecraft setup")
+            ch = await home.create_text_channel(name, topic=topic, overwrites=ow, reason="Statecraft setup")
             report.append(f"created #{name}")
             # keep the category in CHANNELS order (new channels are otherwise added at the bottom)
-            keys = list(CHANNELS)
+            keys = [k for k in CHANNELS if (k in INFO_CHANNELS) == (key in INFO_CHANNELS)]
             before = [channels[k] for k in keys[:keys.index(key)] if k in channels]
             try:
                 if before:
@@ -180,10 +187,22 @@ async def ensure_server(guild: discord.Guild, path: Path, echo=None) -> list[str
             except discord.HTTPException:
                 pass
         else:
-            await ch.edit(topic=topic, overwrites=ow, category=category, reason="Statecraft setup (repair)")
-            report.append(f"found #{name} (permissions reset)")
+            moved = ch.category_id != home.id
+            await ch.edit(topic=topic, overwrites=ow, category=home, reason="Statecraft setup (repair)")
+            report.append(f"found #{name} (permissions reset{f', moved to {home.name}' if moved else ''})")
         channels[key] = ch
         data["channels"][key] = ch.id
+
+    # Channels moved between categories can land out of order: put each category back in CHANNELS order
+    for group in ([k for k in CHANNELS if k in INFO_CHANNELS], [k for k in CHANNELS if k not in INFO_CHANNELS]):
+        chans = [channels[k] for k in group]
+        if [c.id for c in sorted(chans, key=lambda c: c.position)] != [c.id for c in chans]:
+            try:
+                await chans[0].move(beginning=True, reason="Statecraft setup")
+                for prev, ch in zip(chans, chans[1:]):
+                    await ch.move(after=prev, reason="Statecraft setup")
+            except discord.HTTPException:
+                pass
 
     # #public-chat webhook: posts appear under each state's name
     diplo = channels["public_chat"]
