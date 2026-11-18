@@ -16,7 +16,7 @@ import discord
 CATEGORY = "Statecraft"                # gameplay channels
 INFO_CATEGORY = "Info"                 # rules, how-to-play, register: at the top; players can collapse it
 CONSOLE_CATEGORY = "Your State"        # a player's own category until the game starts (then the State's name)
-INFO_CHANNELS = {"rules", "how_to_play", "register"}
+INFO_CHANNELS = {"faq", "rules", "how_to_play", "register"}
 
 ROLES = {
     # key: (name, colour)
@@ -31,6 +31,7 @@ ROLES = {
 #   jury:     only the Jury role
 #   admin:    hidden (server admins see it via Administrator)
 CHANNELS = {
+    "faq": ("faq", "What Statecraft is, in a minute. Start here.", "readonly"),
     "rules": ("rules", "The rules of Statecraft.", "readonly"),
     "how_to_play": ("how-to-play", "How to use the bot: your console, the panel, chat, DMs, and pacts.", "readonly"),
     "register": ("register", "Run /join here to enter the next game. Your state name stays private.", "open"),

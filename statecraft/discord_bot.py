@@ -39,7 +39,7 @@ BOARD_CHANGING = {"GAME_START", "MOVE", "ATTACK", "ELIMINATION", "UPGRADE", "DAI
 PICTURES = {"influence": lambda: render_image.influence_png()}   # illustrations used by the guides
 # Events after which the per-spy channels may need opening, closing, or a new Gift
 SPY_KINDS = {"INFO_PURCHASE", "INFO_EXPIRED", "GIFT", "ELIMINATION", "DAILY_AP", "ADMIN_EDIT", "GAME_OVER"}
-KEEP_ON_FRESH = {"admin_log", "rules", "how_to_play"}   # fresh_channels never wipes these
+KEEP_ON_FRESH = {"admin_log", "faq", "rules", "how_to_play"}   # fresh_channels never wipes these
 
 
 def _same_card(msg: discord.Message, card: discord.Embed) -> bool:
@@ -565,8 +565,9 @@ class Router:
             cid = self.svc.channel_id(key)
             return f"<#{cid}>" if cid else f"#{key.replace('_', '-')}"
 
-        welcome = guides.register(s, mention("rules"), mention("how_to_play"))
-        for key, sections in (("rules", guides.rules(s)), ("how_to_play", guides.how_to_play(s)),
+        welcome = guides.register(s, mention("rules"), mention("how_to_play"), mention("faq"))
+        faq = guides.faq(s, mention("register"), mention("rules"), mention("how_to_play"))
+        for key, sections in (("faq", faq), ("rules", guides.rules(s)), ("how_to_play", guides.how_to_play(s)),
                               ("register", welcome)):
             ch = self.channel(key)
             if not ch:
@@ -640,9 +641,9 @@ class Router:
     async def _remove_stray_guide_copies(self) -> list[str]:
         """Delete bot messages in the guide channels that aren't the tracked guide cards."""
         report = []
-        for key in ("rules", "how_to_play", "register"):
+        for key in ("faq", "rules", "how_to_play", "register"):
             ch = self.channel(key)
-            keep = set(self.svc.server.get("guides", {}).get(key, []))
+            keep =set(self.svc.server.get("guides", {}).get(key, []))
             if not ch or not keep:
                 continue
             stray = [m async for m in ch.history(limit=200) if m.author.id == self.bot.user.id and m.id not in keep]

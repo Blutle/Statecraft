@@ -9,7 +9,8 @@ class GuideTests(unittest.TestCase):
     def test_cards_fit_discord_limits(self):
         for name, sections in (("rules", guides.rules(DEFAULT_SETTINGS)),
                                ("how_to_play", guides.how_to_play(DEFAULT_SETTINGS)),
-                               ("register", guides.register(DEFAULT_SETTINGS))):
+                               ("register", guides.register(DEFAULT_SETTINGS)),
+                               ("faq", guides.faq(DEFAULT_SETTINGS))):
             self.assertLessEqual(len(sections), 25, name)
             for title, body, *_ in sections:
                 self.assertLessEqual(len(title), 256, title)
@@ -60,6 +61,13 @@ class GuideTests(unittest.TestCase):
         self.assertIn("<#1>", body)
         self.assertIn("<#2>", body)
         self.assertIn("❔ How to use the server: <#2>", body)
+
+    def test_faq(self):
+        (title, body), = guides.faq(dict(DEFAULT_SETTINGS, window_open="15:00"), "<#9>")
+        self.assertIn("**What is this?**", body)
+        self.assertIn("3:00 PM–8:00 PM Central", body)    # hours follow the settings
+        self.assertIn("`/join` in <#9>", body)
+        self.assertIn("a week or so", body)
 
 
 if __name__ == "__main__":

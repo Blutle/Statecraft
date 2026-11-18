@@ -120,7 +120,46 @@ def rules(s: dict) -> list[tuple[str, str]]:
     ]
 
 
-def register(s: dict, rules_ch: str = "#rules", how_ch: str = "#how-to-play") -> list[tuple[str, str]]:
+def faq(s: dict, register_ch: str = "#register", rules_ch: str = "#rules",
+        how_ch: str = "#how-to-play") -> list[tuple[str, str]]:
+    """#faq: a quick overview for people who've just been invited."""
+    open_, close = _t(s["window_open"]), _t(s["window_close"])
+    tz = "Central" if s["timezone"] == "America/Chicago" else s["timezone"]
+    ap = s["daily_ap"]
+    qa = [
+        ("What is this?",
+         "A game of diplomacy and betrayal played entirely through Discord, on your phone. Everyone secretly "
+         "controls a State on a shared map, and nobody knows who's behind which one. Make alliances, break them, "
+         "and be the last State standing."),
+        ("How much of a time commitment is this?",
+         "You can put as little or as much time into politics as you want, but the actual active playtime per day "
+         f"is anywhere from thirty seconds to a few minutes. You get {ap} action point{'s' if ap != 1 else ''} a "
+         "day, so taking your turn takes seconds. The talking is where the game happens."),
+        ("What's with the active hours? That seems like a long time.",
+         f"Actions can only happen {open_}–{close} {tz}. The active hours aren't meant to show you how long you "
+         "have to play. They're purely in place to stop people from getting destroyed by surprise while they're "
+         "asleep. You don't need to be online during them; one visit is enough."),
+        ("Will people know it's me?",
+         "No. You play as your State, and nobody can see which State is yours unless it's destroyed or the game "
+         "ends."),
+        ("What if I miss a day?",
+         "Nothing bad happens. Your action points save up, so you can take your turn tomorrow."),
+        ("What happens if I get knocked out?",
+         "You join the Jury, which votes every night to give bonus action points to surviving States. Getting "
+         "knocked out doesn't take you out of the game."),
+        ("How long does a game last?",
+         "I'm expecting a week or so, but it could be more or less depending on how people play."),
+        ("Is there a prize?",
+         "That's up to the players. I've floated the idea of a cheap buy-in to make a prize pool, but we can also "
+         "just play for fun."),
+        ("How do I join?",
+         f"Type `/join` in {register_ch}. The rules are in {rules_ch}, and {how_ch} explains the bot."),
+    ]
+    return [("❔ Statecraft FAQ", "\n\n".join(f"**{q}**\n{a}" for q, a in qa))]
+
+
+def register(s: dict, rules_ch: str = "#rules", how_ch: str = "#how-to-play",
+             faq_ch: str = "#faq") -> list[tuple[str, str]]:
     """The pinned welcome card in #register. The channel names come in as
     mentions so they're clickable in Discord."""
     return [
@@ -128,6 +167,7 @@ def register(s: dict, rules_ch: str = "#rules", how_ch: str = "#how-to-play") ->
          "**Type `/join` in this channel to register a State.**\n\n"
          "• You'll get a **private console**, a channel only you (and the referee) can see.\n"
          "• Everything you send through the bot is recorded for the post-game summary.\n\n"
+         f"🗒️ What is this? {faq_ch}\n"
          f"📜 Game rules: {rules_ch}\n"
          f"❔ How to use the server: {how_ch}"),
     ]
