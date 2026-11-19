@@ -186,8 +186,9 @@ def action_card(ev, game: Game, now: datetime | None = None) -> discord.Embed:
     elif k == "ELIMINATION":
         v = game.get(d["victim"])
         by = f" by {tag(d['attacker'])}" if d.get("attacker") else " by the referee"
-        emb.description = (f"💀 {tag(d['victim'])} was **destroyed**{by}\n"
-                           f"It was controlled by **{v.owner_name}**, who joins the Jury.")
+        reveal = (f"It was an AI state ruled by **{v.owner_name}**, and it leaves the game." if game.is_npc(v.id)
+                  else f"It was controlled by **{v.owner_name}**, who joins the Jury.")
+        emb.description = f"💀 {tag(d['victim'])} was **destroyed**{by}\n{reveal}"
     elif k == "MOVE":
         emb.description = f"🧭 {tag(d['pid'])} moved {d['from']} → **{d['to']}**"
     elif k == "UPGRADE":

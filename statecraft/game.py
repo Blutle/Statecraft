@@ -26,6 +26,7 @@ MAX_NAME_LEN = 24          # state names: sized so the board legend never cuts o
 MAX_PACT_NAME_LEN = 40
 ABBREV_LEN = 3
 MAX_MESSAGE_LEN = 1500
+NPC_PREFIX = "npc-"        # ids of AI-controlled states (see AI_PLAYERS_PLAN.md)
 
 
 def data_event(kind: str, **data) -> list[Event]:
@@ -113,6 +114,71 @@ class Game:
 
     def pos(self, p: Player) -> str:
         return geometry.coord_label(p.x, p.y) if p.x is not None else "-"
+
+    # ------------------------------------------------------------- AI states
+
+    @staticmethod
+    def is_npc(pid: str | None) -> bool:
+        """AI-controlled states. They play like anyone else, but never join
+        pacts, never vote, and simply leave the game when destroyed."""
+        return bool(pid) and pid.startswith(NPC_PREFIX)
+
+    def is_juror(self, p: Player) -> bool:
+        """Destroyed human States form the Jury; destroyed AI states don't."""
+        return not p.alive and not self.is_npc(p.id)
+
+    def fall_note(self, p: Player) -> str:
+        """The elimination announcement's second sentence (the identity reveal)."""
+        if self.is_npc(p.id):
+            return f"It was an AI state ruled by {p.owner_name}, and it leaves the game."
+        return f"It was controlled by {p.owner_name}, who now joins the Jury."
+
+    def legal_actions(self, pid: str, now: datetime | None = None) -> list[dict]:
+        """Every gameplay action `pid` can take right now, checked the same way
+        the actions themselves check (phase, window, cooldown, AP, range,
+        board edges, occupied squares). Always starts with {"action": "pass"}.
+
+        Each entry is {"action": "upgrade" | "spy"}, {"action": "attack" |
+        "gift", "target": id}, or {"action": "move", "direction": d}, and can
+        be carried out with perform()."""
+        out = [{"action": "pass"}]
+        p, err = self._actor(pid, 0, now)
+        if err:
+            return out
+        s = self.s
+        if p.ap >= s["upgrade_cost"]:
+            out.append({"action": "upgrade"})
+        if p.ap >= s["info_cost"] and pid not in self.state.info_access:
+            out.append({"action": "spy"})
+        near = sorted((t for t in self.alive_players() if t.id != pid and self.in_range(p, t)),
+                      key=lambda t: t.state_name.lower())
+        for kind, cost in (("attack", s["attack_cost"]), ("gift", s["gift_amount"])):
+            if p.ap >= cost:
+                out += [{"action": kind, "target": t.id} for t in near]
+        if p.ap >= s["move_cost"]:
+            for d, (dx, dy) in geometry.DIRECTIONS.items():
+                nx, ny = p.x + dx, p.y + dy
+                if geometry.on_board(nx, ny, self.state.board_size) and not self.occupant(nx, ny):
+                    out.append({"action": "move", "direction": d})
+        return out
+
+    def perform(self, pid: str, action: dict, now: datetime | None = None) -> Result:
+        """Carry out one legal_actions() entry through the ordinary (recorded)
+        action methods, so every rule is checked again."""
+        kind = action.get("action")
+        if kind == "pass":
+            return Result(True, "Passed.")
+        if kind == "upgrade":
+            return self.upgrade(pid, now=now)
+        if kind == "spy":
+            return self.buy_info(pid, now=now)
+        if kind == "attack":
+            return self.attack(pid, action.get("target", ""), now=now)
+        if kind == "gift":
+            return self.gift(pid, action.get("target", ""), now=now)
+        if kind == "move":
+            return self.move(pid, action.get("direction", ""), now=now)
+        return Result.fail(f"Unknown action {kind!r}.")
 
     # ------------------------------------------------------------- lifecycle
 
@@ -404,9 +470,8 @@ class Game:
             events.append(Event(
                 "ELIMINATION",
                 data={"victim": t.id, "attacker": p.id},
-                public=(f"{p.state_name} attacked {t.state_name}, destroying it! "
-                        f"{t.state_name} was controlled by {t.owner_name}, who now joins the Jury."),
-                private={t.id: self.DESTROYED_NOTE},
+                public=f"{p.state_name} attacked {t.state_name}, destroying it! {self.fall_note(t)}",
+                private={} if self.is_npc(t.id) else {t.id: self.DESTROYED_NOTE},
                 ping="mandatory",
             ))
             events += self._check_victory()
@@ -535,6 +600,8 @@ class Game:
             return Result.fail("You are not a player in this game.")
         if p.alive:
             return Result.fail("Only eliminated players (the Jury) can vote.")
+        if self.is_npc(pid):
+            return Result.fail("AI states don't join the Jury.")
         if now is not None and not schedule.voting_open(now, self.s):
             return Result.fail(f"Jury voting is open {self.s['window_close']} until {self.s['vote_lock']} "
                                f"the next day ({self.s['timezone']}). Votes are locked right now.")
@@ -669,7 +736,7 @@ class Game:
         final_day = self.state.day
         rows = []
         for p in self.state.players.values():
-            if p.alive:
+            if not self.is_juror(p):
                 continue
             ballots = [b for b in self.state.jury_history if b["juror"] == p.id and b["tallied"]]
             winners = set(self.winners())
@@ -847,9 +914,8 @@ class Game:
                 extra += self._destroy(p)
                 extra.append(Event(
                     "ELIMINATION",
-                    public=(f"{p.state_name} has been destroyed by the referee. It was controlled by "
-                            f"{p.owner_name}, who now joins the Jury."),
-                    private={p.id: self.DESTROYED_NOTE},
+                    public=f"{p.state_name} has been destroyed by the referee. {self.fall_note(p)}",
+                    private={} if self.is_npc(p.id) else {p.id: self.DESTROYED_NOTE},
                     ping="mandatory", data={"victim": p.id, "attacker": None}))
                 extra += self._check_victory()
             elif n > 0 and not was_alive:               # revived by the referee
@@ -926,23 +992,35 @@ class Game:
             "PUBLIC_CHAT", public=f"{p.state_name}: {text}",
             data={"sender": p.id, "state": p.state_name, "text": text})])
 
-    @recorded("dm")
-    def dm(self, pid: str, tid: str, text: str) -> Result:
-        """Private state-to-state message, relayed to the recipient's console.
-        Survivors message survivors and jurors message jurors, never across."""
+    def dm_problem(self, pid: str, tid: str) -> str:
+        """Why `pid` can't message `tid` right now ("" if they can). Survivors
+        message survivors and jurors message jurors, never across; destroyed
+        AI states take no messages, and AI states never message each other."""
         p, t = self.get(pid), self.get(tid)
         if not p:
-            return Result.fail("You are not a player in this game.")
+            return "You are not a player in this game."
         if self.state.phase != "active":
-            return Result.fail("Chat through the bot is only open while the game is in progress.")
+            return "Chat through the bot is only open while the game is in progress."
         if not t:
-            return Result.fail("No such state.")
+            return "No such state."
         if t.id == p.id:
-            return Result.fail("You can't message yourself.")
+            return "You can't message yourself."
+        if self.is_npc(t.id) and not t.alive:
+            return f"{t.state_name} has fallen and answers no more."
+        if self.is_npc(p.id) and self.is_npc(t.id):
+            return "AI states don't message each other."
         if p.alive and not t.alive:
-            return Result.fail(f"{t.state_name} has been destroyed and can't receive private messages.")
+            return f"{t.state_name} has been destroyed and can't receive private messages."
         if t.alive and not p.alive:
-            return Result.fail("Jurors can only send private messages to other jurors.")
+            return "Jurors can only send private messages to other jurors."
+        return ""
+
+    @recorded("dm")
+    def dm(self, pid: str, tid: str, text: str) -> Result:
+        """Private state-to-state message, relayed to the recipient's console."""
+        if err := self.dm_problem(pid, tid):
+            return Result.fail(err)
+        p, t = self.get(pid), self.get(tid)
         text, err = self._message_text(text)
         if err:
             return Result.fail(err)
@@ -994,6 +1072,8 @@ class Game:
         p = self.get(pid)
         if not p:
             return None, "You are not a player in this game."
+        if self.is_npc(pid):
+            return None, "AI states don't join pacts."
         if self.state.phase == "registration":
             return None, "Pacts open when the game starts."
         if self.state.phase == "ended":
@@ -1040,6 +1120,8 @@ class Game:
             return Result.fail("No such state.")
         if not t.alive:
             return Result.fail(f"{t.state_name} has been destroyed and can't join pacts.")
+        if self.is_npc(tid):
+            return Result.fail(f"{t.state_name} is an AI state and doesn't join pacts.")
         if tid in pc["members"]:
             return Result.fail(f"{t.state_name} is already in {pc['name']}.")
         if tid in pc["invites"]:

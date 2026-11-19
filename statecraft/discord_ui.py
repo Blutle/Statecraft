@@ -245,7 +245,7 @@ class PactMenuView(discord.ui.View):
         async def chose_pact(ci: discord.Interaction, pact_id: str):
             pc = g.pact(pact_id)
             candidates = [p for p in g.state.players.values()
-                          if p.id not in pc["members"] and p.id not in pc["invites"]]
+                          if p.id not in pc["members"] and p.id not in pc["invites"] and not g.is_npc(p.id)]
             if not candidates:
                 await ci.response.edit_message(content="Everyone is already a member or invited.", view=None)
                 return
@@ -477,9 +477,8 @@ class TargetView(discord.ui.View):
         elif self.kind == "vote":
             await ui.reply(i, await ui.svc.run(lambda g, now: g.vote(pid, tid, now=now)), edit=True)
         elif self.kind == "dm":
-            if g.get(pid).alive != t.alive:                 # a State was destroyed since the menu opened
-                await i.response.edit_message(content="Survivors can only message survivors, and jurors "
-                                                       "only jurors.", view=None)
+            if err := g.dm_problem(pid, tid):               # e.g. a State was destroyed since the menu opened
+                await i.response.edit_message(content=err, view=None)
                 return
             await i.response.defer(ephemeral=True, thinking=True)
             thread = await ui.bot.router.open_dm_thread(pid, tid)
@@ -742,10 +741,10 @@ class UI:
             await i.response.send_message(pact_summary(g, pid), view=PactMenuView(self, pid), ephemeral=True,
                                           allowed_mentions=NO_PINGS)
         elif what == "dm":
-            alive = g.get(pid).alive                    # survivors message survivors, jurors message jurors
-            others = [p for p in g.state.players.values() if p.id != pid and p.alive == alive]
+            others = [p for p in g.state.players.values() if not g.dm_problem(pid, p.id)]
             if not others:
-                await i.response.send_message("There are no other jurors to message yet.", ephemeral=True)
+                await i.response.send_message("There's nobody you can message right now." if g.get(pid).alive
+                                              else "There are no other jurors to message yet.", ephemeral=True)
                 return
             await i.response.send_message("Who do you want to message?", view=TargetView(self, pid, "dm", others),
                                           ephemeral=True)

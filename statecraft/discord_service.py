@@ -182,5 +182,6 @@ class GameService:
 
     @staticmethod
     def is_fake(pid: str) -> bool:
-        """Test-mode players have no Discord account."""
-        return pid.startswith("fake")
+        """Players with no Discord account: test-mode fakes and AI states
+        (npc-...). Never ping, add to threads, or give roles to these."""
+        return pid.startswith(("fake", "npc-"))

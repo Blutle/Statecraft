@@ -800,7 +800,7 @@ def register_commands(bot: StatecraftBot) -> None:
         for p in svc.game.state.players.values():
             if alive_only and not p.alive:
                 continue
-            if same_side and me and (p.alive != me.alive or p.id == me.id):
+            if same_side and me and svc.game.dm_problem(me.id, p.id):
                 continue
             if cur in p.state_name.lower() or cur == p.marker.lower():
                 out.append(app_commands.Choice(name=f"{p.state_name} [{p.marker}]"[:100], value=p.id))
@@ -812,7 +812,7 @@ def register_commands(bot: StatecraftBot) -> None:
     async def any_states(i, current):
         return await states_autocomplete(i, current, False)
 
-    async def dm_states(i, current):           # survivors list survivors, jurors list jurors
+    async def dm_states(i, current):           # whoever Game.dm_problem allows
         return await states_autocomplete(i, current, False, same_side=True)
 
     # ---- registration

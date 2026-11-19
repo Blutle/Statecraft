@@ -16,3 +16,8 @@ backups/
 # Secrets (Discord token, later)
 .env
 board_samples/
+
+# AI state memory (runtime)
+npcs.json
+npcs.json.tmp
+npcs.*.json
