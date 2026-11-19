@@ -26,7 +26,7 @@ from . import colours, config, discord_setup, geometry, guides, npc, render_imag
 from .discord_format import (HELP, NO_PINGS, action_card, ping_only, board_message, history_line, own_status, parse_duration, public_status,
                              run_text)
 from .discord_service import GameService
-from .npc_service import NPCService, OpenAIBrain
+from .npc_service import NPCService, OpenAIBrain, Sandbox
 from .discord_ui import (UI, BoardRangeSelect, PactInviteButton, PanelButton, PanelSelect, ReplyButton, board_view,
                          pact_summary, send_color_picker)
 from .models import Event, Result
@@ -1655,6 +1655,42 @@ def register_commands(bot: StatecraftBot) -> None:
             return
         await i.response.defer(ephemeral=True, thinking=True)
         await i.edit_original_response(content=(await npcs.poll(pid))[:2000])
+
+    @ai.command(name="try", description="Practice with an AI character in a private sandbox (never touches the game)")
+    @app_commands.autocomplete(character=character_choices)
+    @app_commands.describe(character="A character file in characters/",
+                           message="What your test state says to it. Leave empty to make it decide a move instead",
+                           reset="Throw the sandbox away and start a fresh board, with fresh AI memories")
+    async def ai_try(i: discord.Interaction, character: str,
+                     message: app_commands.Range[str, 1, 1500] | None = None, reset: bool = False):
+        if not await admin_only(i):
+            return
+        if not npcs.enabled:
+            await i.response.send_message("AI states are off: " + npcs.status_text().splitlines()[0], ephemeral=True)
+            return
+        key = character.strip().lower()
+        if key not in npc.character_keys():
+            await i.response.send_message(f"There's no characters/{key}.json.", ephemeral=True)
+            return
+        await i.response.defer(ephemeral=True, thinking=True)
+        intro = ""
+        sb = npcs.sandbox
+        if reset or sb is None or not sb.pid_of(key):
+            if sb:
+                sb.close()
+            try:
+                sb, intro = await Sandbox.create(npcs, npc.character_keys())
+            except (RuntimeError, npc.CharacterError) as e:
+                await i.edit_original_response(content=f"Couldn't build the sandbox: {e}")
+                return
+            npcs.sandbox = sb
+        pid = sb.pid_of(key)
+        body = await sb.chat(pid, message) if message else await sb.poll(pid)
+        text = (intro + "\n\n" if intro else "") + body
+        chunks = [text[k:k + 1900] for k in range(0, len(text), 1900)] or ["(nothing)"]
+        await i.edit_original_response(content=chunks[0], allowed_mentions=NO_PINGS)
+        for chunk in chunks[1:4]:
+            await i.followup.send(chunk, ephemeral=True, allowed_mentions=NO_PINGS)
 
     tree.add_command(admin)
 

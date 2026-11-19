@@ -238,6 +238,32 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.npcs.memory.pids(), [])
         self.assertTrue(list(self.npcs.memory.path.parent.glob("npcs.*.json")))
 
+    async def test_sandbox_never_touches_the_live_game(self):
+        from statecraft.npc_service import Sandbox
+        live_history = len(self.svc.history.records())
+        live_memory = json.dumps(self.npcs.memory.data, sort_keys=True)
+        live_players = sorted(self.svc.game.state.players)
+        sb, intro = await Sandbox.create(self.npcs, ["balderdash"])
+        self.assertIn("Your Test State", intro)
+        pid = sb.pid_of("balderdash")
+        self.brain.answers = [{"reply": "Welcome, tester!", "relationship_updates": [
+            {"state": "Your Test State", "likability": 8, "notes": ["Seems nice"]}], "personal_notes": None}]
+        out = await sb.chat(pid, "Hello Jarl")
+        self.assertIn("Welcome, tester!", out)
+        self.assertIn("likability 5 -> 8", out)
+        menu = npc.action_menu(sb.svc.game, pid, sb.now())
+        code = next(c for c, a, _ in menu if a == {"action": "upgrade"})
+        self.brain.answers = [{"choice": code, "reason": "Practice glory.", "public_message": "Behold!",
+                               "relationship_updates": [], "personal_notes": None}]
+        out = await sb.poll(pid)
+        self.assertIn("upgrade", out)
+        self.assertIn("Behold!", out)
+        self.assertEqual(len(self.svc.history.records()), live_history)
+        self.assertEqual(json.dumps(self.npcs.memory.data, sort_keys=True), live_memory)
+        self.assertEqual(sorted(self.svc.game.state.players), live_players)
+        sb.close()
+        self.assertFalse(sb.dir.exists())
+
     async def test_status_and_memory_text(self):
         self.assertIn("Kingdom of Balderheim", self.npcs.status_text())
         self.assertIn("No opinions yet", self.npcs.memory_text(self.pid))

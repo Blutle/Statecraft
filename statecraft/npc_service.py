@@ -18,12 +18,17 @@ ai_* record, and is mirrored to the referee's AI log threads.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import logging
 import random
+import shutil
+import tempfile
 from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
 from typing import Awaitable, Callable, Protocol
 
-from . import npc
+from . import npc, schedule
 from .discord_service import GameService
 from .models import Event, Result
 
@@ -81,6 +86,8 @@ class NPCService:
         self.wake: dict[tuple[str, str], float] = {}          # (npc, human) -> loop time to reply at
         self.tasks: set[asyncio.Task] = set()
         self.replying: dict[tuple[str, str], asyncio.Task] = {}
+        self.debounce = DEBOUNCE_SECONDS
+        self.sandbox: Sandbox | None = None              # the referee's practice game (/admin ai try)
 
     # ------------------------------------------------------------ helpers
 
@@ -245,7 +252,7 @@ class NPCService:
         npc.add_message(entry, sender, "them", text, now, self.settings.history_messages)
         self.memory.save()
         key = (recipient, sender)
-        self.wake[key] = asyncio.get_running_loop().time() + DEBOUNCE_SECONDS
+        self.wake[key] = asyncio.get_running_loop().time() + self.debounce
         if key not in self.replying or self.replying[key].done():
             self.replying[key] = self._spawn(self._reply_when_quiet(recipient, sender))
 
@@ -369,3 +376,103 @@ class NPCService:
         await self.ai_log(pid, f"🎲 **{desc}** ({outcome})\n-# {reason}" + posted
                           + (f"\n-# 🧠 {'; '.join(changes)}" if changes else ""))
         return f"{c.state_name} chose: {desc} ({outcome})."
+
+
+class Sandbox:
+    """The referee's private practice game for /admin ai try: the real
+    character files and model on a throwaway board, with a test state for the
+    referee and its own temporary history and memory. Nothing in it touches
+    the live game, its history log, or npcs.json. Lost on restart."""
+
+    TESTER = "sandbox-you"
+    TESTER_NAME = "Your Test State"
+    FILLERS = ("Republic of Aldren", "Veyran Empire", "Free Cities")
+    AI_AP = 3                                  # so polls have choices
+
+    def __init__(self, live: NPCService):
+        self.dir = Path(tempfile.mkdtemp(prefix="statecraft-sandbox-"))
+        cfg = dataclasses.replace(live.svc.cfg, game_file=self.dir / "game.json",
+                                  server_file=self.dir / "server.json")
+        self.live = live
+        self.svc = GameService(cfg)
+        self.svc.now = self.now
+        self.out: list[str] = []
+
+        async def note(text: str) -> None:
+            self.out.append(text)
+
+        async def ai_note(pid: str, text: str) -> None:
+            self.out.append(text)
+
+        async def deliver(events: list[Event]) -> None:
+            for e in events:
+                if e.public and e.kind not in ("PUBLIC_CHAT", "PRIVATE_MESSAGE"):
+                    self.out.append(f"📰 {e.public}")
+
+        self.npcs = NPCService(self.svc, live.settings, live.brain, deliver, note, ai_note,
+                               characters=live.characters, rng=live.rng)
+        self.npcs.debounce = 0
+
+    def now(self) -> datetime:
+        """Real time if the action window is open, otherwise 3:00 PM today, so
+        polls always run."""
+        real, s = self.live.svc.now(), self.svc.game.s
+        if schedule.window_open(real, s):
+            return real
+        return schedule.at(schedule.local(real, s).date(), s, "window_open").replace(hour=15)
+
+    @classmethod
+    async def create(cls, live: NPCService, keys: list[str]) -> tuple["Sandbox", str]:
+        sb = cls(live)
+        added = []
+        for key in keys:
+            res = await sb.npcs.add(key)
+            if res.ok:
+                added.append(key)
+        names = {p.state_name.lower() for p in sb.svc.game.state.players.values()}
+        await sb.svc.run(lambda g, now: g.register("You", cls.TESTER_NAME, pid=cls.TESTER))
+        for n, name in enumerate(cls.FILLERS, start=1):
+            if name.lower() not in names:
+                await sb.svc.run(lambda g, now, n=n, name=name: g.register(f"Filler {n}", name, pid=f"filler{n}"))
+        res = await sb.svc.run(lambda g, now: g.start(force=True, now=now))
+        if not res.ok:
+            sb.close()
+            raise RuntimeError(res.message)
+        for pid in sb.npcs.memory.pids():
+            sb.svc.game.get(pid).ap = cls.AI_AP
+        g = sb.svc.game
+        return sb, (f"🧪 New sandbox: {g.state.board_size}x{g.state.board_size} board, AI states start with "
+                    f"{cls.AI_AP} AP.\n" + npc.board_text(g, cls.TESTER).replace("YOU, ", "YOU (referee), "))
+
+    def pid_of(self, key: str) -> str | None:
+        pid = npc.NPC_PREFIX + key
+        return pid if self.npcs.memory.entry(pid) else None
+
+    async def _drain(self) -> None:
+        while self.npcs.tasks:
+            await asyncio.gather(*list(self.npcs.tasks), return_exceptions=True)
+
+    async def chat(self, pid: str, text: str) -> str:
+        self.out = []
+        res = await self.svc.run(lambda g, now: g.dm(self.TESTER, pid, text))
+        if not res.ok:
+            return f"Not delivered: {res.message}"
+        await self.npcs.on_dm(self.TESTER, pid, text)
+        await self._drain()
+        return "\n".join(self.out)
+
+    async def poll(self, pid: str) -> str:
+        self.out = []
+        p = self.svc.game.get(pid)
+        if not p.alive:
+            return f"{p.state_name} was destroyed in the sandbox. Use reset:True for a fresh one."
+        p.last_action = None                   # no cooldown between practice polls
+        topped = p.ap < 2
+        if topped:
+            p.ap = 2
+        summary = await self.npcs.poll(pid)
+        lines = self.out or [summary]
+        return ("-# (topped up to 2 AP)\n" if topped else "") + "\n".join(lines)
+
+    def close(self) -> None:
+        shutil.rmtree(self.dir, ignore_errors=True)
