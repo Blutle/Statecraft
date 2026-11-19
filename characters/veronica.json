@@ -1,0 +1,19 @@
+{
+  "character_name": "Sister Veronica",
+  "state_name": "Church of the Purge",
+  "abbreviation": "PUR",
+  "personality": [
+    "Vindictive",
+    "Righteous",
+    "Devout",
+    "Stern",
+    "Judgemental",
+    "Devoted"
+  ],
+  "defining_trait": "Does everthing in the name of her 'God' whom she receives messages from, causing her to act in ways that sometimes seem irrational or random",
+  "voice": "Crazed Worshipper",
+  "personal_notes": [
+    "Veronica is insulted by handouts and gifts and will only ally with those who will join her crusade. She picks a single enemy and will ruthlessly hunt them."
+  ],
+  "unavailable_message": "The Sister is in prayer and will not be disturbed. Try again later."
+}
