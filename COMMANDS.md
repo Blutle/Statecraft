@@ -7,6 +7,7 @@ The Discord command reference. Update this file whenever a command is added, cha
   - Every command and panel control in this file, except the items below.
   - Pacts: anonymous relayed channel copies, Accept/Decline invitations, the panel Pacts menu, and the `/pact` commands.
   - `/admin cleanup`.
+  - AI states (`/admin ai …`, 2026-11-19). See `AI_PLAYERS_PLAN.md`.
 - **Not built yet:**
   - `/admin open`. It isn't really needed: a new or reset game is already open for `/join`.
 
@@ -188,6 +189,12 @@ Jury discussion happens in #jury. It's normal chat, not a command.
 | `/admin declare states:<states>` | (Yes/Cancel) Ends the game with one or more joint winners, for a draw agreed outside the game. Reveals the winners. |
 | `/admin consoles` | Every state with its owner and clickable links to their console, conversation threads, and pact channels. Consoles have random names, so this is how you find them. (As server owner you can open all of them. Anyone else with Administrator or Manage Threads can too, so keep those roles to yourself.) |
 | `/admin log [state:<state>] [count:<n>]` | The most recent history-log entries (20 by default, up to 60) for one state or for everyone. Covers actions (rejected ones marked ✗), messages, pact messages, and anonymous posts, **with the real author**. |
+| `/admin ai add character:<name>` | During registration: adds an AI state from `characters/<name>.json` (autocompletes the available files). It plays as `npc-<name>`, with the owner name "Character Name (AI)", and counts toward the 12-player minimum and the board size. The start announcement lists the AI states. |
+| `/admin ai remove state:<state>` | During registration: takes an AI state back out. |
+| `/admin ai list` | AI states with AP, status, and next poll time; today's chat and poll spending against the budgets; the players sending them the most messages. Shows **OFF** and what's missing if `.env` isn't set up. |
+| `/admin ai memory state:<state>` | What an AI state currently thinks of everyone: likability (1–10) and notes, plus its personal notes. |
+| `/admin ai pause state:<state>` / `resume` | A paused AI skips its polls and answers every message with its unavailable message (no API calls). Logged. |
+| `/admin ai poll state:<state>` | Makes the AI decide a move now, outside its 4 random daily polls. The normal window, cooldown, and AP rules still apply. Replies with what it chose. |
 | `/admin juryscore` | After the game: ranks jurors by votes for the winner(s), with ballots, nights, and rate. |
 | `/admin reload` | Reloads `game.json` after you edit it by hand. |
 | `/admin reset [fresh_channels:<true>]` | (Yes/Cancel) Wipes the game for a fresh one. The old history log is kept under a timestamped name. |

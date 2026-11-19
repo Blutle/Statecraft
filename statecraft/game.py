@@ -364,10 +364,13 @@ class Game:
         self.state.day = 0
         if now is not None:
             self.state.clock_marker = now.isoformat()
+        ais = [p for p in players if self.is_npc(p.id)]
+        ai_note = (" AI states: " + ", ".join(f"{p.state_name} (ruled by {p.owner_name})" for p in ais) + "."
+                   if ais else "")
         return self._done(Result(True, "Game started.", [Event(
             "GAME_START",
             public=f"Statecraft begins: {n} states on a {size}x{size} board. Everyone starts with 0 AP; "
-                   f"the first AP arrives at the start of Day 1.",
+                   f"the first AP arrives at the start of Day 1.{ai_note}",
             ping="mandatory",
             data={"states": [p.id for p in players], "size": size},
         )]))

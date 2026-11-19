@@ -22,10 +22,11 @@ import discord
 from discord import app_commands
 from discord.ext import tasks
 
-from . import colours, config, discord_setup, geometry, guides, render_image, schedule
+from . import colours, config, discord_setup, geometry, guides, npc, render_image, schedule
 from .discord_format import (HELP, NO_PINGS, action_card, ping_only, board_message, history_line, own_status, parse_duration, public_status,
                              run_text)
 from .discord_service import GameService
+from .npc_service import NPCService, OpenAIBrain
 from .discord_ui import (UI, BoardRangeSelect, PactInviteButton, PanelButton, PanelSelect, ReplyButton, board_view,
                          pact_summary, send_color_picker)
 from .models import Event, Result
@@ -76,6 +77,26 @@ class Router:
         ch = self.channel("admin_log")
         if ch:
             await ch.send(text[:2000], allowed_mentions=NO_PINGS)
+
+    async def ai_log(self, pid: str, text: str) -> None:
+        """The referee's view of an AI state: one thread per AI in #statecraft-admin."""
+        ch = self.channel("admin_log")
+        if not ch:
+            return
+        threads = self.svc.server.setdefault("ai_threads", {})
+        th = await self._thread(threads.get(pid) or 0) if threads.get(pid) else None
+        try:
+            if th is None:
+                p = self.svc.game.get(pid)
+                th = await ch.create_thread(name=f"🤖 {p.state_name if p else pid}"[:100],
+                                            type=discord.ChannelType.public_thread, auto_archive_duration=10080)
+                threads[pid] = th.id
+                self.svc.save_server()
+            if th.archived:
+                await th.edit(archived=False)
+            await th.send(text[:2000], allowed_mentions=NO_PINGS)
+        except discord.HTTPException:
+            log.exception("AI log failed")
 
     async def deliver(self, events: list[Event], echo_dm: bool = True) -> None:
         board_dirty = False
@@ -406,6 +427,9 @@ class Router:
         invitation) are posted in the console, and the panel then moves back
         below them. Everything else becomes a line in the panel's Recent
         activity, so consoles don't fill up with notices."""
+        if self.svc.game.is_npc(pid):
+            self.bot.npcs.on_notice(pid, text)
+            return
         if self.svc.is_fake(pid):
             p = self.svc.game.get(pid)
             await self.admin_log(f"[to {p.state_name if p else pid}] {text}")
@@ -481,7 +505,9 @@ class Router:
     async def deliver_dm(self, sender: str, recipient: str, text: str, echo: bool) -> None:
         g = self.svc.game
         s_name, r_name = g.get(sender).state_name, g.get(recipient).state_name
-        if self.svc.is_fake(recipient):
+        if g.is_npc(recipient):
+            await self.bot.npcs.on_dm(sender, recipient, text)
+        elif self.svc.is_fake(recipient):
             await self.admin_log(f"[DM {s_name} -> {r_name}] {text}")
         else:
             await self.post_in_dm_thread(recipient, sender, text, s_name,
@@ -707,6 +733,8 @@ class StatecraftBot(discord.Client):
         self.cfg = cfg
         self.svc = GameService(cfg)
         self.router = Router(self)
+        self.npcs = NPCService(self.svc, cfg.ai, OpenAIBrain(cfg.ai) if cfg.ai.enabled else None,
+                               self.router.deliver, self.router.admin_log, self.router.ai_log)
         self.ui = UI(self)
         self.tree = app_commands.CommandTree(self)
         self._webhook: discord.Webhook | None = None
@@ -777,6 +805,7 @@ class StatecraftBot(discord.Client):
             await self.router.deliver(res.events)
         if res.message:
             await self.router.admin_log(f"Scheduler ran: {res.message}")
+        await self.npcs.tick()
 
     @scheduler.before_loop
     async def _wait_ready(self):
@@ -1391,7 +1420,8 @@ def register_commands(bot: StatecraftBot) -> None:
             if p and not p.alive:
                 title += " · destroyed"
             if svc.is_fake(pid):
-                fields.append((title, f"Test player ({p.owner_name if p else pid}); no console"))
+                kind = "AI state" if svc.game.is_npc(pid) else "Test player"
+                fields.append((title, f"{kind} ({p.owner_name if p else pid}); no console"))
                 continue
             cid = svc.console_of(pid)
             lines = [f"Owner: <@{pid}> ({p.owner_name if p else 'unnamed'})",
@@ -1504,6 +1534,7 @@ def register_commands(bot: StatecraftBot) -> None:
             people = set(svc.server["consoles"]) | set(svc.game.state.players)
             async with svc.lock:
                 archived = svc.reset()
+                bot.npcs.reset()
             await delete_game_channels(ci.guild, people)
             svc.server.pop("board_message_id", None)
             svc.save_server()
@@ -1544,6 +1575,86 @@ def register_commands(bot: StatecraftBot) -> None:
                  if fresh_channels else " Public channels keep their messages.")
         await ui.ask(i, "Delete every console and pact channel and remove the game roles? The game record "
                         f"(game.json and the history log) is kept.{extra}{warn}", go, ephemeral=True)
+
+    # ---- AI states (AI_PLAYERS_PLAN.md)
+    ai = app_commands.Group(name="ai", description="AI-controlled states", parent=admin)
+    npcs = bot.npcs
+
+    async def character_choices(i: discord.Interaction, current: str):
+        return [app_commands.Choice(name=k, value=k) for k in npc.character_keys() if current.lower() in k][:25]
+
+    async def ai_states(i: discord.Interaction, current: str):
+        out = []
+        for pid in npcs.memory.pids():
+            p = svc.game.get(pid)
+            if p and current.lower() in p.state_name.lower():
+                out.append(app_commands.Choice(name=f"{p.state_name} [{p.marker}]"[:100], value=pid))
+        return out[:25]
+
+    def ai_pid(value: str) -> str | None:
+        if npcs.memory.entry(value):
+            return value
+        tid, _ = ui.resolve(value, admin=True)
+        return tid if tid and npcs.memory.entry(tid) else None
+
+    @ai.command(name="add", description="Add an AI character (a file in characters/) to the game being registered")
+    @app_commands.autocomplete(character=character_choices)
+    async def ai_add(i: discord.Interaction, character: str):
+        if await admin_only(i):
+            res = await npcs.add(character.strip().lower())
+            await ui.reply(i, res)
+            if res.ok:
+                ui.schedule_refresh()
+
+    @ai.command(name="remove", description="Take an AI state out of the game being registered")
+    @app_commands.autocomplete(state=ai_states)
+    async def ai_remove(i: discord.Interaction, state: str):
+        if not await admin_only(i):
+            return
+        pid = ai_pid(state)
+        await ui.reply(i, await npcs.remove(pid) if pid else Result.fail("That isn't an AI state."))
+
+    @ai.command(name="list", description="AI states, today's spending, and their next polls")
+    async def ai_list(i: discord.Interaction):
+        if await admin_only(i):
+            text = npcs.status_text()
+            if not npcs.memory.pids():
+                text += "\nNone in this game. Characters available: " + (", ".join(npc.character_keys()) or "none")
+            await i.response.send_message(text[:2000], ephemeral=True, allowed_mentions=NO_PINGS)
+
+    @ai.command(name="memory", description="What an AI state currently thinks of everyone")
+    @app_commands.autocomplete(state=ai_states)
+    async def ai_memory(i: discord.Interaction, state: str):
+        if await admin_only(i):
+            pid = ai_pid(state)
+            await i.response.send_message((npcs.memory_text(pid) if pid else "That isn't an AI state.")[:2000],
+                                          ephemeral=True, allowed_mentions=NO_PINGS)
+
+    @ai.command(name="pause", description="Pause an AI state: it skips polls and sends its unavailable message")
+    @app_commands.autocomplete(state=ai_states)
+    async def ai_pause(i: discord.Interaction, state: str):
+        if await admin_only(i):
+            pid = ai_pid(state)
+            await ui.reply(i, npcs.set_paused(pid, True) if pid else Result.fail("That isn't an AI state."))
+
+    @ai.command(name="resume", description="Resume a paused AI state")
+    @app_commands.autocomplete(state=ai_states)
+    async def ai_resume(i: discord.Interaction, state: str):
+        if await admin_only(i):
+            pid = ai_pid(state)
+            await ui.reply(i, npcs.set_paused(pid, False) if pid else Result.fail("That isn't an AI state."))
+
+    @ai.command(name="poll", description="Make an AI state decide its move now (normal rules still apply)")
+    @app_commands.autocomplete(state=ai_states)
+    async def ai_poll(i: discord.Interaction, state: str):
+        if not await admin_only(i):
+            return
+        pid = ai_pid(state)
+        if not pid:
+            await i.response.send_message("That isn't an AI state.", ephemeral=True)
+            return
+        await i.response.defer(ephemeral=True, thinking=True)
+        await i.edit_original_response(content=(await npcs.poll(pid))[:2000])
 
     tree.add_command(admin)
 

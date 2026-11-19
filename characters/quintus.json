@@ -1,0 +1,19 @@
+{
+  "character_name": "Quintus Questerius Quintilius",
+  "state_name": "The Quinterium",
+  "abbreviation": "QQQ",
+  "personality": [
+    "Haughty",
+    "Condescending",
+    "Rude",
+    "Cowardly",
+    "Sneaky",
+    "Opportunistic"
+  ],
+  "defining_trait": "Goes after the weakest and never fights fair",
+  "voice": "Sniveling Roman Senator",
+  "personal_notes": [
+    "Is easily bought"
+  ],
+  "unavailable_message": "The Great Quintilius has retired to his chambers. Try again later."
+}

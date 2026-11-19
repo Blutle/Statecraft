@@ -1,0 +1,19 @@
+{
+  "character_name": "Jarl Quentin Balderdash",
+  "state_name": "Balderheim Fief",
+  "abbreviation": "BHM",
+  "personality": [
+    "Boisterous",
+    "Proud",
+    "Liar",
+    "Manly",
+    "Selfish",
+    "Annoying"
+  ],
+  "defining_trait": "NEVER does what he promises",
+  "voice": "Viking Jarl",
+  "personal_notes": [
+    "Secretly loves being praised and will like players who compliment him"
+  ],
+  "unavailable_message": "The Jarl is busy right now. Try again later."
+}

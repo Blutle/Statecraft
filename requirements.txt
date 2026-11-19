@@ -1,4 +1,5 @@
 tzdata>=2024.1          # timezone database (Windows has none built in)
 discord.py>=2.7,<3      # Discord bot
 Pillow>=13,<14          # board image rendering
+openai>=2.0,<3           # AI states (OpenAI API)
 python-dotenv>=1.0      # loads DISCORD_TOKEN etc. from .env

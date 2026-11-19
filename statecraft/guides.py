@@ -149,6 +149,13 @@ def faq(s: dict, register_ch: str = "#register", rules_ch: str = "#rules",
         ("What if I miss a day?",
          "Nothing bad happens. Your action points save up, so you can take your turn tomorrow. (Unless you made "
          "some enemies, then you might find yourself on the Jury.)"),
+        ("Are some of the States bots?",
+         "Some games include a few AI-controlled States: eccentric rulers with exaggerated personalities, "
+         "played by an AI. They're announced when the game starts, so you'll know which ones they are. They "
+         "play by the same rules, and you can message them like anyone else: flatter them, threaten them, "
+         "make deals. They remember how you treated them, though their promises are only as good as their "
+         "character. They never join pacts or the Jury, and they never message first. Messages you send them "
+         "are processed by OpenAI to write their replies."),
         ("What happens if I get knocked out?",
          "You join the Jury, which votes every night to give bonus action points to surviving States. You can "
          "still influence the game, even once you're knocked out."),

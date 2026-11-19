@@ -8,6 +8,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from . import npc
+
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -24,6 +26,7 @@ class Config:
     placement: str = "top"                  # top | bottom
     announcements: str = "announcements"    # existing channel to post in, or "" for the bot's own
     players_only: bool = False              # game channels visible only to players (and jurors)
+    ai: npc.AISettings = npc.AISettings()   # AI states (AI_* keys); off unless key, model and prices are set
 
     @property
     def layout(self):
@@ -42,6 +45,10 @@ def load() -> Config:
     admins = frozenset(int(x) for x in os.getenv("ADMIN_IDS", "").replace(" ", "").split(",") if x)
     game_file = ROOT / os.getenv("GAME_FILE", "game.json").strip()
     placement = os.getenv("CATEGORY_PLACEMENT", "top").strip().lower()
+    try:
+        ai = npc.AISettings.from_env()
+    except ValueError as e:
+        raise SystemExit(str(e)) from None
     if placement not in ("top", "bottom"):
         raise SystemExit("CATEGORY_PLACEMENT in .env must be top or bottom")
     return Config(
@@ -54,4 +61,5 @@ def load() -> Config:
         placement=placement,
         announcements=os.getenv("ANNOUNCEMENTS_CHANNEL", "announcements").strip().lstrip("#"),
         players_only=os.getenv("PLAYERS_ONLY", "0").strip() == "1",
+        ai=ai,
     )

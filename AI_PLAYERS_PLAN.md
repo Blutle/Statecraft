@@ -198,7 +198,24 @@ Poll decisions, passes, memory changes, limit hits and API failures are also wri
 - Pact invites to AIs are rejected.
 - Conversations never reach gameplay functions.
 
-## 10. Effort
+## 10. Status
+
+- **Step 1 done (2026-11-19):** engine rules (`is_npc`, `is_juror`, `dm_problem`, `legal_actions`,
+  `perform`), character template, `.env.example`.
+- **Step 2 done (2026-11-19):** `statecraft/npc.py` covers settings, characters, memory, prompts,
+  menus, response checks, usage limits and poll times. Tested in `tests/test_npc.py`, with no network
+  calls.
+- **Step 3 done (2026-11-19):** `statecraft/npc_service.py` holds the OpenAI calls (gpt-6-luna,
+  reasoning `none`), typing debounce, conversations and polls. The Discord hooks are DMs to AIs, notices,
+  the scheduler tick, reset, and `#statecraft-admin` AI threads, plus the `/admin ai` commands, the FAQ
+  entry and the docs. Tested in `tests/test_npc_service.py` with a fake model. A live end-to-end run with
+  both characters cost $0.0012 for 6 calls.
+- Simplification vs. §4: no per-AI locks. Memory updates are synchronous, so asyncio can't interleave
+  them.
+- Game sense: the board shows who can reach the AI, attack options flag a kill, move options say who
+  you'd reach or escape, and a BASIC SENSE block covers sensible play.
+
+## 11. Effort
 
 Roughly 1,000–1,300 lines including tests, about 2–3 sessions. The suggested order:
 

@@ -69,6 +69,20 @@ holds the old server's channel IDs, so move it (and `game.json`) aside first, e.
 `mv /opt/statecraft/server.json /opt/statecraft/server.old.json`. One bot runs one server at a time; to run two
 at once, set up a second bot application and a second copy in its own folder.
 
+## AI states
+
+AI-controlled states (see `AI_PLAYERS_PLAN.md`) need the `# ---- AI states` block from `.env.example` in
+`/opt/statecraft/.env`, with `OPENAI_API_KEY` filled in. Without a key they stay off. Then:
+
+1. Copy the character files over: `scp characters/*.json root@IP:/opt/statecraft/characters/`. They're in git
+   too, so `update.sh` brings them along if you've committed them.
+2. Run `bash /opt/statecraft/deploy/update.sh`, which also installs the `openai` package.
+3. During registration, `/admin ai add <character>` in Discord. `/admin ai list` shows whether it's on and
+   what today has cost.
+
+The AI memory is `/opt/statecraft/npcs.json`. It's set aside as `npcs.<time>.json` on `/admin reset`. Add it
+to any manual copy you make of `game.json`.
+
 ## Moving the game back to your PC
 
 Stop the droplet bot first (`systemctl stop statecraft`), then **(PC)**
