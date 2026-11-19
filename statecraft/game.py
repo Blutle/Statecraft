@@ -54,7 +54,11 @@ def recorded(action: str):
 
 class Game:
     def __init__(self, state: GameState | None = None, rng: random.Random | None = None,
-                 recorder: Callable[[dict], None] | None = None):
+                 recorder: Callable[[dict], None] | None = None,
+                 reserved: Callable[[], tuple[set[str], set[str]]] | None = None):
+        # reserved() -> (lowercase state names, abbreviations) kept for AI characters,
+        # so players can't take them before the referee adds the AI (see npc.reserved_tags)
+        self.reserved = reserved or (lambda: (set(), set()))
         self.state = state or GameState()
         self.rng = rng or random.Random()
         self.recorder = recorder
@@ -200,6 +204,10 @@ class Game:
         if any(c in state_name for c in "@#<>`*_~|\\"):
             return Result.fail("State names can't contain @ # < > ` * _ ~ | or backslashes.")
         existing = self.state.players.get(pid) if pid else None
+        human = not self.is_npc(pid)
+        reserved_names, reserved_tags = self.reserved() if human else (set(), set())
+        if state_name.lower() in reserved_names:
+            return Result.fail(f"The name '{state_name}' is reserved for an AI state.")
         if abbreviation is not None and abbreviation.strip():
             abbreviation = abbreviation.strip().upper()
             if not (len(abbreviation) == ABBREV_LEN and abbreviation.isascii() and abbreviation.isalpha()):
@@ -208,6 +216,8 @@ class Game:
                              if p.marker == abbreviation and p is not existing), None)
             if taken_by:
                 return Result.fail(f"The abbreviation {abbreviation} is already taken.")
+            if abbreviation in reserved_tags:
+                return Result.fail(f"The abbreviation {abbreviation} is reserved for an AI state.")
         else:
             abbreviation = None
         for p in self.state.players.values():
@@ -226,7 +236,7 @@ class Game:
                 existing.marker = abbreviation
             elif renamed or not existing.marker:
                 existing.marker = ""
-                existing.marker = self._make_marker(state_name)
+                existing.marker = self._make_marker(state_name, avoid=reserved_tags)
             return Result(True, f"Your state is now **{state_name}**, shown on the board as **{existing.marker}**.",
                           data_event("RENAME", pid=pid))
 
@@ -238,7 +248,7 @@ class Game:
             id=pid,
             owner_name=owner_name,
             state_name=state_name,
-            marker=abbreviation or self._make_marker(state_name),
+            marker=abbreviation or self._make_marker(state_name, avoid=reserved_tags),
             hp=self.s["starting_hp"],
         )
         self.state.players[pid] = player
@@ -256,10 +266,10 @@ class Game:
             return Result.fail("No such player.")
         return Result(True, f"Removed {p.state_name}.")
 
-    def _make_marker(self, state_name: str) -> str:
+    def _make_marker(self, state_name: str, avoid: set[str] = frozenset()) -> str:
         """A unique 3-letter abbreviation from the state name, used when the
         player doesn't choose one (e.g. 'The Iron Dominion' -> IDO)."""
-        taken = {p.marker for p in self.state.players.values()}
+        taken = {p.marker for p in self.state.players.values()} | set(avoid)
         words = [w for w in state_name.split() if w.lower() not in STOPWORDS] or state_name.split()
         words = ["".join(c for c in w if c.isascii() and c.isalpha()) for w in words]
         words = [w for w in words if w] or ["X"]

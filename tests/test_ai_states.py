@@ -175,5 +175,40 @@ class PactTests(unittest.TestCase):
         self.assertFalse(g.create_pact("npc-bal", "Balderdash Bros").ok)
 
 
+
+class ReservedTagTests(unittest.TestCase):
+    """AI characters' state names and abbreviations are kept for them."""
+
+    def game(self):
+        return Game(rng=random.Random(1), reserved=lambda: ({"church of the purge"}, {"PUR"}))
+
+    def test_players_cant_take_reserved_names_or_tags(self):
+        g = self.game()
+        res = g.register("alice", "Church of the Purge", pid="h1")
+        self.assertFalse(res.ok)
+        self.assertIn("reserved for an AI state", res.message)
+        res = g.register("alice", "Purity League", pid="h1", abbreviation="pur")
+        self.assertFalse(res.ok)
+        self.assertIn("reserved", res.message)
+
+    def test_generated_markers_avoid_reserved_tags(self):
+        g = self.game()
+        self.assertTrue(g.register("alice", "Purple Unicorn Republic", pid="h1").ok)   # would be PUR
+        self.assertNotEqual(g.get("h1").marker, "PUR")
+
+    def test_the_ai_itself_can_use_them(self):
+        g = self.game()
+        self.assertTrue(g.register("Sister Veronica (AI)", "Church of the Purge", pid="npc-veronica",
+                                   abbreviation="PUR").ok)
+
+    def test_shipped_characters_are_reserved(self):
+        from statecraft import npc
+        names, tags = npc.reserved_tags()
+        for key in npc.character_keys():
+            c = npc.load_character(key)
+            self.assertIn(c.state_name.lower(), names)
+            if c.abbreviation:
+                self.assertIn(c.abbreviation, tags)
+
 if __name__ == "__main__":
     unittest.main()

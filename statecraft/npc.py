@@ -143,6 +143,21 @@ def character_keys(directory: Path = CHARACTER_DIR) -> list[str]:
     return sorted(p.stem for p in directory.glob("*.json") if not p.name.startswith("_"))
 
 
+def reserved_tags(directory: Path = CHARACTER_DIR) -> tuple[set[str], set[str]]:
+    """(lowercase state names, abbreviations) of every character file, read
+    fresh each time, so players can't register them before the AI is added."""
+    names, tags = set(), set()
+    for key in character_keys(directory):
+        try:
+            c = load_character(key, directory)
+        except CharacterError:
+            continue
+        names.add(c.state_name.lower())
+        if c.abbreviation:
+            tags.add(c.abbreviation)
+    return names, tags
+
+
 def load_character(key: str, directory: Path = CHARACTER_DIR) -> Character:
     if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,30}", key):
         raise CharacterError(f"'{key}' isn't a valid character name: use lowercase letters, digits, - or _.")

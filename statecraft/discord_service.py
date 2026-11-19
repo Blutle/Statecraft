@@ -12,7 +12,7 @@ import random
 from datetime import datetime, timedelta, timezone
 from typing import Callable
 
-from . import discord_setup, store
+from . import discord_setup, npc, store
 from .config import Config
 from .game import Game
 from .models import GameState, Result
@@ -31,7 +31,7 @@ class GameService:
 
     def _load_game(self) -> Game:
         state = store.load(self.cfg.game_file)
-        return Game(state, rng=random.Random(), recorder=self.history.append)
+        return Game(state, rng=random.Random(), recorder=self.history.append, reserved=npc.reserved_tags)
 
     def reload(self) -> None:
         """Pick up hand edits to game.json."""
@@ -40,7 +40,7 @@ class GameService:
     def reset(self) -> str | None:
         """Wipe the game; the old history is kept under a timestamped name."""
         archived = self.history.archive()
-        self.game = Game(GameState(), rng=random.Random(), recorder=self.history.append)
+        self.game = Game(GameState(), rng=random.Random(), recorder=self.history.append, reserved=npc.reserved_tags)
         store.save(self.game.state, self.cfg.game_file)
         return str(archived) if archived else None
 
